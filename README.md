@@ -1,95 +1,53 @@
-# Cours progressif — CI/CD, Azure DevOps et déploiements Azure — 4 jours
+# CI/CD avec Azure DevOps
 
-Ce dossier propose un parcours **progressif et exploitable** pour animer 4 jours de cours autour de la CI, du CD, des environnements et des déploiements Azure avec Azure DevOps.
+Ce cours suit une application web simple appelée **Croissant API**. Elle commence comme un petit projet local, puis elle est versionnée, testée, construite, empaquetée et déployée progressivement avec Azure DevOps.
 
-Le support initial est très large. Ici, le cours est volontairement recentré pour ne pas noyer les participants. Le fil rouge est simple :
-
-```text
-Code source
-  ↓
-Pipeline Azure DevOps
-  ↓
-CI : build + tests + qualité
-  ↓
-Artefact versionné
-  ↓
-CD : Dev → Test/Staging → Production
-  ↓
-Approvals, secrets, rollback, monitoring
-```
-
-## Découpage en 4 jours
-
-| Jour | Thème | Objectif principal |
-|---|---|---|
-| J1 | Fondations DevOps, Azure DevOps et YAML | Comprendre CI/CD, pipeline, stage, job, step, agent et YAML |
-| J2 | CI concrète | Construire un pipeline qui restaure, teste, build et publie un artefact |
-| J3 | CD et environnements Azure | Déployer un artefact vers Dev puis Test/Staging avec variables et environnements |
-| J4 | Production propre | Protéger la prod avec approvals, secrets, slots, rollback et checklist finale |
-
-## Structure des dossiers
+Le fil conducteur reste le même du début à la fin :
 
 ```text
-cours_ci_cd_azure_devops_4jours/
-├── README.md
-├── 00_table_des_matieres.md
-├── 00_commun/
-├── J1_fondations_et_yaml/
-├── J2_ci_build_tests_artefacts/
-├── J3_cd_environnements_azure/
-└── J4_prod_secrets_slots_rollback/
+code source
+  ↓
+repository Git
+  ↓
+pull request
+  ↓
+pipeline CI
+  ↓
+artefact
+  ↓
+pipeline CD
+  ↓
+environnement de test
+  ↓
+production
+  ↓
+rollback si nécessaire
 ```
 
-Chaque jour contient :
+## Contenu
 
-```text
-00_deroule_journee.md       → agenda pédagogique
-01_cours.md                 → cours principal prêt à utiliser
-02_demo_guidee.md           → déroulé de démonstration
-03_ateliers.md              → exercices apprenants
-04_corrections.md           → corrigés
-05_notes_formateur.md       → conseils d’animation et pièges à éviter
-```
+1. [Le cycle de vie applicatif](cours/01_cycle_de_vie_applicatif.md)
+2. [Azure DevOps dans le cycle de vie](cours/02_azure_devops.md)
+3. [Git, branches et pull requests](cours/03_git_repos_branches_pr.md)
+4. [Premier pipeline YAML](cours/04_premier_pipeline_yaml.md)
+5. [Intégration continue](cours/05_integration_continue.md)
+6. [Artefacts de build](cours/06_artefacts.md)
+7. [Déploiement continu et environnements](cours/07_deploiement_continu_environnements.md)
+8. [Déploiement Azure App Service](cours/08_deploiement_azure_app_service.md)
+9. [Variables, secrets et Key Vault](cours/09_variables_secrets_keyvault.md)
+10. [Approbations, checks et production](cours/10_approbations_checks_production.md)
+11. [Deployment slots, Blue/Green et rollback](cours/11_slots_blue_green_rollback.md)
+12. [Pipeline complet](cours/12_pipeline_complet.md)
+13. [Bonnes pratiques](cours/13_bonnes_pratiques.md)
 
-## Fil rouge conseillé
+## Démos
 
-Utiliser une application web fictive très simple : **Croissant Web**.
+Le dossier `demos/` contient une application de départ et plusieurs fichiers YAML prêts à copier dans Azure DevOps.
 
-Fonctionnalités minimales :
+- [`demos/app-croissant-start.zip`](demos/app-croissant-start.zip) : application de départ pour les démonstrations.
+- [`demos/pipelines/`](demos/pipelines/) : exemples de pipelines CI, CD et production.
 
-```text
-GET /        → affiche "Hello from <environment>"
-GET /health  → retourne "OK"
-```
+## Exercices
 
-On évite une application complexe. Le sujet du cours est la chaîne CI/CD, pas le développement applicatif.
-
-## Ce qu’il faut éviter en profondeur pendant ces 4 jours
-
-Ces sujets peuvent être mentionnés mais pas détaillés, sauf si le public est déjà avancé :
-
-- Azure Boards en profondeur ;
-- Scrum, CMMI, RBAC complet ;
-- Terraform Azure DevOps ;
-- agent self-hosted Docker complet ;
-- Canary avancé ;
-- Defender for DevOps détaillé ;
-- métriques DORA en profondeur ;
-- Kubernetes / AKS.
-
-## Posture formateur
-
-Phrase directrice :
-
-> La CI donne confiance dans le code. Le CD donne confiance dans la livraison.
-
-Répéter souvent :
-
-```text
-CI = vérifier
-CD = livrer / déployer
-Artefact = résultat déployable
-Environnement = endroit où l'application tourne
-Approval = contrôle humain avant une étape sensible
-Rollback = retour arrière prévu avant l'incident
-```
+Les exercices sont regroupés dans le dossier `exercices/`.
+Les corrigés sont dans le dossier `corriges/`.

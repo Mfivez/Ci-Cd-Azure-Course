@@ -1,0 +1,44 @@
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Build
+    displayName: "Build et tests"
+    jobs:
+      - job: BuildJob
+        displayName: "Construire Croissant API"
+        steps:
+          - checkout: self
+
+          - task: NodeTool@0
+            displayName: "Installer Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: npm ci
+            displayName: "Installer les dépendances"
+
+          - script: npm test
+            displayName: "Lancer les tests"
+
+          - script: npm run build --if-present
+            displayName: "Build applicatif"
+
+          - script: |
+              mkdir -p $(Build.ArtifactStagingDirectory)/app
+              cp package*.json $(Build.ArtifactStagingDirectory)/app/
+              cp -r src $(Build.ArtifactStagingDirectory)/app/src
+            displayName: "Préparer l’artefact"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publier l’artefact"
+            inputs:
+              targetPath: "$(Build.ArtifactStagingDirectory)/app"
+              artifact: "croissant-api"
+              publishLocation: "pipeline"

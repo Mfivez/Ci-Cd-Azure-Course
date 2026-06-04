@@ -1,0 +1,141 @@
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  azureServiceConnection: "sc-azure-croissant"
+  resourceGroupName: "rg-croissant-demo"
+  devAppName: "app-croissant-dev"
+  stagingAppName: "app-croissant-staging"
+  prodAppName: "app-croissant-prod"
+
+stages:
+  - stage: Build
+    displayName: "Build et tests"
+    jobs:
+      - job: BuildJob
+        displayName: "Construire Croissant API"
+        steps:
+          - checkout: self
+
+          - task: NodeTool@0
+            displayName: "Installer Node.js"
+            inputs:
+              versionSpec: "20.x"
+
+          - script: npm ci
+            displayName: "Installer les dépendances"
+
+          - script: npm test
+            displayName: "Lancer les tests"
+
+          - script: |
+              mkdir -p $(Build.ArtifactStagingDirectory)/app
+              cp package*.json $(Build.ArtifactStagingDirectory)/app/
+              cp -r src $(Build.ArtifactStagingDirectory)/app/src
+            displayName: "Préparer l’artefact"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publier l’artefact"
+            inputs:
+              targetPath: "$(Build.ArtifactStagingDirectory)/app"
+              artifact: "croissant-api"
+              publishLocation: "pipeline"
+
+  - stage: Deploy_Dev
+    displayName: "Déploiement Dev"
+    dependsOn: Build
+    jobs:
+      - deployment: DeployDev
+        displayName: "Déployer en Dev"
+        environment: "croissant-dev"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: "croissant-api"
+                    path: "$(Pipeline.Workspace)/croissant-api"
+
+                - task: AzureWebApp@1
+                  displayName: "Déployer sur App Service Dev"
+                  inputs:
+                    azureSubscription: "$(azureServiceConnection)"
+                    appType: "webAppLinux"
+                    appName: "$(devAppName)"
+                    package: "$(Pipeline.Workspace)/croissant-api"
+
+  - stage: Deploy_Staging
+    displayName: "Déploiement Staging"
+    dependsOn: Deploy_Dev
+    jobs:
+      - deployment: DeployStaging
+        displayName: "Déployer en Staging"
+        environment: "croissant-staging"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: "croissant-api"
+                    path: "$(Pipeline.Workspace)/croissant-api"
+
+                - task: AzureWebApp@1
+                  displayName: "Déployer sur App Service Staging"
+                  inputs:
+                    azureSubscription: "$(azureServiceConnection)"
+                    appType: "webAppLinux"
+                    appName: "$(stagingAppName)"
+                    package: "$(Pipeline.Workspace)/croissant-api"
+
+                - script: |
+                    curl --fail https://$(stagingAppName).azurewebsites.net/health
+                  displayName: "Smoke test Staging"
+
+  - stage: Deploy_Production
+    displayName: "Déploiement Production"
+    dependsOn: Deploy_Staging
+    jobs:
+      - deployment: DeployProduction
+        displayName: "Déployer en Production"
+        environment: "croissant-production"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  inputs:
+                    artifact: "croissant-api"
+                    path: "$(Pipeline.Workspace)/croissant-api"
+
+                - task: AzureWebApp@1
+                  displayName: "Déployer sur le slot staging"
+                  inputs:
+                    azureSubscription: "$(azureServiceConnection)"
+                    appType: "webAppLinux"
+                    appName: "$(prodAppName)"
+                    deployToSlotOrASE: true
+                    resourceGroupName: "$(resourceGroupName)"
+                    slotName: "staging"
+                    package: "$(Pipeline.Workspace)/croissant-api"
+
+                - script: |
+                    curl --fail https://$(prodAppName)-staging.azurewebsites.net/health
+                  displayName: "Smoke test slot staging"
+
+                - task: AzureAppServiceManage@0
+                  displayName: "Swap staging vers production"
+                  inputs:
+                    azureSubscription: "$(azureServiceConnection)"
+                    Action: "Swap Slots"
+                    WebAppName: "$(prodAppName)"
+                    ResourceGroupName: "$(resourceGroupName)"
+                    SourceSlot: "staging"
+                    SwapWithProduction: true
