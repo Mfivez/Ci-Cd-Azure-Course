@@ -243,3 +243,29 @@ Approvals = contrôle production
 Key Vault = secrets
 Bicep = infrastructure reproductible
 ```
+---
+
+## À pratiquer maintenant — Exercice 8 : lire le pipeline complet end-to-end
+
+Terminez par l’exercice de synthèse :
+
+- Énoncé : `exercices/08_pipeline_end_to_end.md`
+- Corrigé : `corriges/08_pipeline_end_to_end_corrige.md`
+- Pipeline complet : `demos/pipelines/04-full-docker-first.yml`
+
+À la fin, vous devez pouvoir expliquer oralement le chemin complet :
+
+```text
+push GitHub
+Azure Pipelines
+npm test
+docker build
+docker push vers ACR
+déploiement staging
+smoke test
+approbation production
+swap
+rollback possible
+```
+
+Cet exercice sert de récapitulatif final du cours.

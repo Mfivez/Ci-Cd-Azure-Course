@@ -193,3 +193,25 @@ ACR contient croissant-api:<BuildId>
 ```
 
 Le CD pourra ensuite déployer cette image.
+---
+
+## À pratiquer maintenant — Exercice 3 : comprendre les tags et le registry
+
+Avant de parler de déploiement, réalisez l’exercice :
+
+- Énoncé : `exercices/03_tags_et_acr.md`
+- Corrigé : `corriges/03_tags_et_acr_corrige.md`
+- Pipeline de référence : `demos/pipelines/02-build-and-push-acr.yml`
+
+À la fin, vous devez savoir expliquer :
+
+```text
+pourquoi une image doit être taguée
+pourquoi latest ne suffit pas pour tracer une version
+à quoi sert Azure Container Registry
+ce que représente une Service Connection vers ACR
+```
+
+Variante sans Azure payant : ne créez pas d’ACR. Lisez le pipeline, identifiez la partie `buildAndPush`, puis expliquez ce qui serait exécuté si un registry était disponible.
+
+Reprenez au chapitre 7 lorsque le rôle du registry est clair.

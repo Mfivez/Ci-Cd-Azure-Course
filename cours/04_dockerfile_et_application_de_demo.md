@@ -165,3 +165,24 @@ smoke test du conteneur
 ```
 
 Le pipeline ne fait donc pas de magie. Il automatise ce qui peut déjà être fait localement.
+---
+
+## À pratiquer maintenant — Exercice 1 : lancer Croissant API avec Docker
+
+Avant de continuer, ouvrez l’application de départ et réalisez l’exercice :
+
+- Application : `demos/croissant-api-start/`
+- Énoncé : `exercices/01_docker_local.md`
+- Corrigé : `corriges/01_docker_local_corrige.md`
+
+À la fin de la pratique, vous devez avoir vérifié que :
+
+```text
+npm test passe
+l’image croissant-api:local est construite
+le conteneur démarre sur le port 8080
+/health répond correctement
+/version affiche les variables transmises au conteneur
+```
+
+Reprenez au chapitre 5 lorsque l’application fonctionne dans un conteneur local.

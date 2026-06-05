@@ -1,6 +1,6 @@
 # CI/CD Docker-first avec Azure DevOps
 
-Le fil rouge est une API conteneurisée : **Croissant API**.
+Le cours suit une application conteneurisée appelée **Croissant API**.
 
 ```text
 GitHub
@@ -18,13 +18,17 @@ Azure App Service for Containers
 Staging
    ↓
 Production
+   ↓
+Rollback possible
 ```
 
-## Lecture
+## Commencer
 
 - `00_cours_complet.md` contient le cours en un seul fichier.
 - `cours/` contient les chapitres séparés.
-- `exercices/` contient les exercices.
+- Les encadrés **À pratiquer maintenant** indiquent précisément quand faire chaque exercice.
+- `00_points_de_pratique.md` récapitule tous les exercices dans l’ordre.
+- `exercices/` contient les énoncés.
 - `corriges/` contient les corrigés.
 - `demos/croissant-api-start.zip` contient l’application de départ.
 - `demos/croissant-api-solution.zip` contient l’application avec les pipelines d’exemple.
@@ -52,3 +56,5 @@ Code GitHub
    → Swap
    → Rollback possible
 ```
+
+Certaines étapes Azure réelles, comme Azure Container Registry, App Service ou les slots, nécessitent une souscription Azure. Les exercices indiquent une variante de lecture lorsque l’exécution cloud n’est pas disponible.

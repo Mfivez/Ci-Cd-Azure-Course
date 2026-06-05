@@ -145,3 +145,26 @@ Swap staging → production
 Ce modèle réduit fortement le risque.
 
 La nouvelle image est testée dans un environnement réel avant d’être exposée aux utilisateurs.
+---
+
+## À pratiquer maintenant — Exercice 6 : staging, swap et rollback
+
+Avant d’aborder les notions as code, réalisez l’exercice :
+
+- Énoncé : `exercices/06_slots_rollback.md`
+- Corrigé : `corriges/06_slots_rollback_corrige.md`
+- Pipeline de référence : `demos/pipelines/05-slot-staging-swap.yml`
+
+À la fin, vous devez être capable de dessiner ce cycle :
+
+```text
+production = ancienne version
+staging = nouvelle version
+validation staging
+swap staging → production
+rollback par swap inverse si problème
+```
+
+Variante sans Azure payant : travaillez sur le schéma et les commandes CLI sans les exécuter.
+
+Reprenez au chapitre 14 lorsque le mécanisme de swap et de rollback est clair.

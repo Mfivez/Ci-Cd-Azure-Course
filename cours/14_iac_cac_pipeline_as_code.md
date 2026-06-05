@@ -162,3 +162,23 @@ Infrastructure = où l’application peut tourner
 Configuration = comment elle se comporte
 Pipeline = comment elle arrive jusque-là
 ```
+---
+
+## À pratiquer maintenant — Exercice 7 : distinguer IaC, CaC et Pipeline as Code
+
+Avant de lire le pipeline complet, réalisez l’exercice :
+
+- Énoncé : `exercices/07_iac_cac_pipeline_as_code.md`
+- Corrigé : `corriges/07_iac_cac_pipeline_as_code_corrige.md`
+- Exemple IaC : `demos/infra/main.bicep`
+
+À la fin, vous devez savoir classer un fichier comme :
+
+```text
+Infrastructure as Code
+Configuration as Code
+Pipeline as Code
+secret à ne pas versionner
+```
+
+Reprenez au chapitre 15 lorsque les trois notions sont bien séparées.

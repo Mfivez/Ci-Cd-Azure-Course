@@ -179,3 +179,22 @@ conteneur démarré avec les secrets nécessaires
 ```
 
 Une image Docker ne doit pas contenir de secret réel.
+---
+
+## À pratiquer maintenant — Exercice 5 : séparer configuration et secrets
+
+Avant de passer aux approbations, réalisez l’exercice :
+
+- Énoncé : `exercices/05_configuration_et_secrets.md`
+- Corrigé : `corriges/05_configuration_et_secrets_corrige.md`
+
+À la fin, vous devez savoir classer chaque valeur dans la bonne catégorie :
+
+```text
+variable non sensible dans le YAML
+variable partagée dans un Variable Group
+secret masqué dans Azure DevOps
+secret applicatif dans Azure Key Vault
+```
+
+Reprenez au chapitre 11 lorsque la différence entre configuration et secret est claire.

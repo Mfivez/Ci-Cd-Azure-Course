@@ -169,3 +169,25 @@ approbation
    ↓
 production
 ```
+---
+
+## À pratiquer maintenant — Exercice 4 : déployer une image sur App Service
+
+Avant d’ajouter les environnements, réalisez l’exercice :
+
+- Énoncé : `exercices/04_cd_app_service.md`
+- Corrigé : `corriges/04_cd_app_service_corrige.md`
+- Pipeline de référence : `demos/pipelines/03-deploy-app-service-container.yml`
+
+À la fin, vous devez savoir relier ces éléments :
+
+```text
+image Docker dans ACR
+App Service for Containers
+commande az webapp config container set
+Service Connection Azure
+```
+
+Variante sans Azure payant : ne lancez pas la commande Azure CLI. Complétez le YAML et expliquez quelle ressource Azure serait modifiée.
+
+Reprenez au chapitre 9 lorsque le lien entre l’image Docker et App Service est compris.

@@ -12,3 +12,15 @@
 - Les secrets ne sont pas dans Git ni dans le Dockerfile.
 - Les App Settings configurent l’application au runtime.
 - Le rollback est documenté.
+
+## Vérification par la pratique
+
+- [ ] Exercice 1 terminé : Docker local
+- [ ] Exercice 2 terminé : CI Docker-first
+- [ ] Exercice 3 terminé : tags et registry
+- [ ] Exercice 4 terminé : CD vers App Service
+- [ ] Exercice 5 terminé : configuration et secrets
+- [ ] Exercice 6 terminé : slots et rollback
+- [ ] Exercice 7 terminé : IaC, CaC et Pipeline as Code
+- [ ] Exercice 8 terminé : lecture du pipeline complet
+

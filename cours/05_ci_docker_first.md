@@ -152,3 +152,23 @@ le conteneur ne démarre pas
 ```
 
 La CI donne alors un feedback rapide. La correction se fait avant de déployer.
+---
+
+## À pratiquer maintenant — Exercice 2 : écrire une CI Docker-first
+
+Avant de passer au registry, réalisez l’exercice :
+
+- Énoncé : `exercices/02_pipeline_ci_docker.md`
+- Corrigé : `corriges/02_pipeline_ci_docker_corrige.md`
+- Pipeline de référence : `demos/pipelines/01-ci-tests-docker-build.yml`
+
+À la fin, votre pipeline doit être capable de :
+
+```text
+récupérer le code
+installer les dépendances
+lancer les tests
+construire une image Docker taguée avec le Build ID
+```
+
+Reprenez au chapitre 6 lorsque la CI produit une image Docker localement sur l’agent.

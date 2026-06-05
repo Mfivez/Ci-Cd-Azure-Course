@@ -1,4 +1,6 @@
-# CI/CD Docker-first avec Azure DevOps
+# Cours complet — CI/CD Docker-first avec Azure DevOps
+
+Le cours suit Croissant API depuis le code GitHub jusqu’au déploiement sur Azure. Les pauses **À pratiquer maintenant** indiquent à quel moment réaliser les exercices.
 
 
 # Chapitre 1 — Du conteneur local à la livraison automatisée
@@ -180,9 +182,6 @@ Pipeline = automatisation du chemin
 
 
 
----
-
-
 # Chapitre 2 — GitHub comme source du code, Azure Pipelines comme moteur
 
 Le code de Croissant API vit dans GitHub.
@@ -360,9 +359,6 @@ L’agent exécute les commandes.
 Azure reçoit l’image ou le déploiement.
 ```
 
-
-
----
 
 
 # Chapitre 3 — `azure-pipelines.yml` et Pipeline as Code
@@ -593,9 +589,6 @@ l’image Docker peut être construite
 
 
 
----
-
-
 # Chapitre 4 — Dockerfile et application de démo
 
 Croissant API est une petite application Node.js sans dépendance externe. Elle utilise le module HTTP natif de Node.js.
@@ -763,10 +756,28 @@ smoke test du conteneur
 ```
 
 Le pipeline ne fait donc pas de magie. Il automatise ce qui peut déjà être fait localement.
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 1 : lancer Croissant API avec Docker
+
+Avant de continuer, ouvrez l’application de départ et réalisez l’exercice :
+
+- Application : `demos/croissant-api-start/`
+- Énoncé : `exercices/01_docker_local.md`
+- Corrigé : `corriges/01_docker_local_corrige.md`
+
+À la fin de la pratique, vous devez avoir vérifié que :
+
+```text
+npm test passe
+l’image croissant-api:local est construite
+le conteneur démarre sur le port 8080
+/health répond correctement
+/version affiche les variables transmises au conteneur
+```
+
+Reprenez au chapitre 5 lorsque l’application fonctionne dans un conteneur local.
+
 
 
 # Chapitre 5 — CI Docker-first : tests, build image et smoke test
@@ -923,10 +934,27 @@ le conteneur ne démarre pas
 ```
 
 La CI donne alors un feedback rapide. La correction se fait avant de déployer.
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 2 : écrire une CI Docker-first
+
+Avant de passer au registry, réalisez l’exercice :
+
+- Énoncé : `exercices/02_pipeline_ci_docker.md`
+- Corrigé : `corriges/02_pipeline_ci_docker_corrige.md`
+- Pipeline de référence : `demos/pipelines/01-ci-tests-docker-build.yml`
+
+À la fin, votre pipeline doit être capable de :
+
+```text
+récupérer le code
+installer les dépendances
+lancer les tests
+construire une image Docker taguée avec le Build ID
+```
+
+Reprenez au chapitre 6 lorsque la CI produit une image Docker localement sur l’agent.
+
 
 
 # Chapitre 6 — Registry et Azure Container Registry
@@ -1124,10 +1152,29 @@ ACR contient croissant-api:<BuildId>
 ```
 
 Le CD pourra ensuite déployer cette image.
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 3 : comprendre les tags et le registry
+
+Avant de parler de déploiement, réalisez l’exercice :
+
+- Énoncé : `exercices/03_tags_et_acr.md`
+- Corrigé : `corriges/03_tags_et_acr_corrige.md`
+- Pipeline de référence : `demos/pipelines/02-build-and-push-acr.yml`
+
+À la fin, vous devez savoir expliquer :
+
+```text
+pourquoi une image doit être taguée
+pourquoi latest ne suffit pas pour tracer une version
+à quoi sert Azure Container Registry
+ce que représente une Service Connection vers ACR
+```
+
+Variante sans Azure payant : ne créez pas d’ACR. Lisez le pipeline, identifiez la partie `buildAndPush`, puis expliquez ce qui serait exécuté si un registry était disponible.
+
+Reprenez au chapitre 7 lorsque le rôle du registry est clair.
+
 
 
 # Chapitre 7 — Azure comme cible de déploiement
@@ -1321,9 +1368,6 @@ Log Stream
 
 
 
----
-
-
 # Chapitre 8 — CD : déployer l’image Docker
 
 Le CD commence quand une image Docker validée existe dans le registry.
@@ -1495,10 +1539,29 @@ approbation
    ↓
 production
 ```
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 4 : déployer une image sur App Service
+
+Avant d’ajouter les environnements, réalisez l’exercice :
+
+- Énoncé : `exercices/04_cd_app_service.md`
+- Corrigé : `corriges/04_cd_app_service_corrige.md`
+- Pipeline de référence : `demos/pipelines/03-deploy-app-service-container.yml`
+
+À la fin, vous devez savoir relier ces éléments :
+
+```text
+image Docker dans ACR
+App Service for Containers
+commande az webapp config container set
+Service Connection Azure
+```
+
+Variante sans Azure payant : ne lancez pas la commande Azure CLI. Complétez le YAML et expliquez quelle ressource Azure serait modifiée.
+
+Reprenez au chapitre 9 lorsque le lien entre l’image Docker et App Service est compris.
+
 
 
 # Chapitre 9 — Environnements et configuration
@@ -1673,9 +1736,6 @@ On ne reconstruit pas pour changer d’environnement.
 On configure l’environnement cible.
 ```
 
-
-
----
 
 
 # Chapitre 10 — Secrets, service connections et Key Vault
@@ -1859,10 +1919,26 @@ conteneur démarré avec les secrets nécessaires
 ```
 
 Une image Docker ne doit pas contenir de secret réel.
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 5 : séparer configuration et secrets
+
+Avant de passer aux approbations, réalisez l’exercice :
+
+- Énoncé : `exercices/05_configuration_et_secrets.md`
+- Corrigé : `corriges/05_configuration_et_secrets_corrige.md`
+
+À la fin, vous devez savoir classer chaque valeur dans la bonne catégorie :
+
+```text
+variable non sensible dans le YAML
+variable partagée dans un Variable Group
+secret masqué dans Azure DevOps
+secret applicatif dans Azure Key Vault
+```
+
+Reprenez au chapitre 11 lorsque la différence entre configuration et secret est claire.
+
 
 
 # Chapitre 11 — Azure Artifacts vs Azure Container Registry
@@ -2005,9 +2081,6 @@ le stockage = Azure Container Registry
 
 Azure Artifacts peut être présenté comme un service complémentaire pour les packages, mais il n’est pas le registry principal de l’image Docker.
 
-
-
----
 
 
 # Chapitre 12 — Approbations, checks et production
@@ -2157,9 +2230,6 @@ Ce modèle est déjà très professionnel.
 
 
 
----
-
-
 # Chapitre 13 — Deployment slots, Blue/Green et rollback
 
 Déployer directement en production est risqué.
@@ -2307,10 +2377,30 @@ Swap staging → production
 Ce modèle réduit fortement le risque.
 
 La nouvelle image est testée dans un environnement réel avant d’être exposée aux utilisateurs.
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 6 : staging, swap et rollback
+
+Avant d’aborder les notions as code, réalisez l’exercice :
+
+- Énoncé : `exercices/06_slots_rollback.md`
+- Corrigé : `corriges/06_slots_rollback_corrige.md`
+- Pipeline de référence : `demos/pipelines/05-slot-staging-swap.yml`
+
+À la fin, vous devez être capable de dessiner ce cycle :
+
+```text
+production = ancienne version
+staging = nouvelle version
+validation staging
+swap staging → production
+rollback par swap inverse si problème
+```
+
+Variante sans Azure payant : travaillez sur le schéma et les commandes CLI sans les exécuter.
+
+Reprenez au chapitre 14 lorsque le mécanisme de swap et de rollback est clair.
+
 
 
 # Chapitre 14 — Infrastructure as Code, Configuration as Code, Pipeline as Code
@@ -2477,10 +2567,27 @@ Infrastructure = où l’application peut tourner
 Configuration = comment elle se comporte
 Pipeline = comment elle arrive jusque-là
 ```
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 7 : distinguer IaC, CaC et Pipeline as Code
+
+Avant de lire le pipeline complet, réalisez l’exercice :
+
+- Énoncé : `exercices/07_iac_cac_pipeline_as_code.md`
+- Corrigé : `corriges/07_iac_cac_pipeline_as_code_corrige.md`
+- Exemple IaC : `demos/infra/main.bicep`
+
+À la fin, vous devez savoir classer un fichier comme :
+
+```text
+Infrastructure as Code
+Configuration as Code
+Pipeline as Code
+secret à ne pas versionner
+```
+
+Reprenez au chapitre 15 lorsque les trois notions sont bien séparées.
+
 
 
 # Chapitre 15 — Pipeline complet end-to-end
@@ -2728,7 +2835,29 @@ Approvals = contrôle production
 Key Vault = secrets
 Bicep = infrastructure reproductible
 ```
-
-
-
 ---
+
+## À pratiquer maintenant — Exercice 8 : lire le pipeline complet end-to-end
+
+Terminez par l’exercice de synthèse :
+
+- Énoncé : `exercices/08_pipeline_end_to_end.md`
+- Corrigé : `corriges/08_pipeline_end_to_end_corrige.md`
+- Pipeline complet : `demos/pipelines/04-full-docker-first.yml`
+
+À la fin, vous devez pouvoir expliquer oralement le chemin complet :
+
+```text
+push GitHub
+Azure Pipelines
+npm test
+docker build
+docker push vers ACR
+déploiement staging
+smoke test
+approbation production
+swap
+rollback possible
+```
+
+Cet exercice sert de récapitulatif final du cours.
