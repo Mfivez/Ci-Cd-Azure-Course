@@ -1,0 +1,15 @@
+{
+  "name": "croissant-api",
+  "version": "1.0.0",
+  "description": "API de démonstration pour un cours CI/CD Docker-first avec Azure DevOps",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

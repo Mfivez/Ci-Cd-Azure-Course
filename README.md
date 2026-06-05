@@ -1,53 +1,54 @@
-# CI/CD avec Azure DevOps
+# CI/CD Docker-first avec Azure DevOps
 
-Ce cours suit une application web simple appelée **Croissant API**. Elle commence comme un petit projet local, puis elle est versionnée, testée, construite, empaquetée et déployée progressivement avec Azure DevOps.
-
-Le fil conducteur reste le même du début à la fin :
+Le fil rouge est une API conteneurisée : **Croissant API**.
 
 ```text
-code source
-  ↓
-repository Git
-  ↓
-pull request
-  ↓
-pipeline CI
-  ↓
-artefact
-  ↓
-pipeline CD
-  ↓
-environnement de test
-  ↓
-production
-  ↓
-rollback si nécessaire
+GitHub
+   ↓
+Azure Pipelines
+   ↓
+Tests
+   ↓
+Image Docker
+   ↓
+Azure Container Registry
+   ↓
+Azure App Service for Containers
+   ↓
+Staging
+   ↓
+Production
 ```
 
-## Contenu
+## Lecture
 
-1. [Le cycle de vie applicatif](cours/01_cycle_de_vie_applicatif.md)
-2. [Azure DevOps dans le cycle de vie](cours/02_azure_devops.md)
-3. [Git, branches et pull requests](cours/03_git_repos_branches_pr.md)
-4. [Premier pipeline YAML](cours/04_premier_pipeline_yaml.md)
-5. [Intégration continue](cours/05_integration_continue.md)
-6. [Artefacts de build](cours/06_artefacts.md)
-7. [Déploiement continu et environnements](cours/07_deploiement_continu_environnements.md)
-8. [Déploiement Azure App Service](cours/08_deploiement_azure_app_service.md)
-9. [Variables, secrets et Key Vault](cours/09_variables_secrets_keyvault.md)
-10. [Approbations, checks et production](cours/10_approbations_checks_production.md)
-11. [Deployment slots, Blue/Green et rollback](cours/11_slots_blue_green_rollback.md)
-12. [Pipeline complet](cours/12_pipeline_complet.md)
-13. [Bonnes pratiques](cours/13_bonnes_pratiques.md)
+- `00_cours_complet.md` contient le cours en un seul fichier.
+- `cours/` contient les chapitres séparés.
+- `exercices/` contient les exercices.
+- `corriges/` contient les corrigés.
+- `demos/croissant-api-start.zip` contient l’application de départ.
+- `demos/croissant-api-solution.zip` contient l’application avec les pipelines d’exemple.
 
-## Démos
+## Démarrage rapide de l’application
 
-Le dossier `demos/` contient une application de départ et plusieurs fichiers YAML prêts à copier dans Azure DevOps.
+```bash
+cd demos/croissant-api-start
+npm test
+docker build -t croissant-api:local .
+docker run --rm -p 8080:8080 croissant-api:local
+curl http://localhost:8080/health
+```
 
-- [`demos/app-croissant-start.zip`](demos/app-croissant-start.zip) : application de départ pour les démonstrations.
-- [`demos/pipelines/`](demos/pipelines/) : exemples de pipelines CI, CD et production.
+## Chaîne finale
 
-## Exercices
-
-Les exercices sont regroupés dans le dossier `exercices/`.
-Les corrigés sont dans le dossier `corriges/`.
+```text
+Code GitHub
+   → CI Azure Pipelines
+   → Docker build
+   → Push ACR
+   → Deploy App Service
+   → Slot staging
+   → Approval production
+   → Swap
+   → Rollback possible
+```

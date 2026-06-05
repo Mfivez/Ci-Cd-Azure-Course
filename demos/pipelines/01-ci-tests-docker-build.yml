@@ -1,0 +1,32 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: croissant-api
+  imageTag: $(Build.BuildId)
+
+steps:
+  - checkout: self
+
+  - script: npm test
+    displayName: "Tests Node.js"
+
+  - script: docker build -t $(imageName):$(imageTag) .
+    displayName: "Docker build"
+
+  - script: |
+      docker run -d --name croissant-api-test -p 8080:8080 $(imageName):$(imageTag)
+      sleep 5
+      curl --fail http://localhost:8080/health
+      docker rm -f croissant-api-test
+    displayName: "Smoke test du conteneur"

@@ -1,0 +1,29 @@
+trigger: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  acrLoginServer: croissantregistrydemo.azurecr.io
+  imageRepository: croissant-api
+  imageTag: 1
+  devAppName: croissant-api-dev
+
+stages:
+  - stage: Deploy_Dev
+    jobs:
+      - deployment: DeployDev
+        environment: croissant-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebAppContainer@1
+                  displayName: "Déployer dev"
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    appName: $(devAppName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+
+                - script: curl --fail https://$(devAppName).azurewebsites.net/health
+                  displayName: "Smoke test dev"

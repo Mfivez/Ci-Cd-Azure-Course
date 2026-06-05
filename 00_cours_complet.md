@@ -1,319 +1,2030 @@
-# 1. Le cycle de vie applicatif
+# CI/CD Docker-first avec Azure DevOps
 
-Une application ne se limite pas au code écrit par les développeurs. Elle possède un cycle de vie complet : elle est conçue, développée, testée, validée, déployée, surveillée puis corrigée au fil du temps.
 
-Dans une équipe, ce cycle doit être organisé. Si chaque personne construit, teste et déploie à sa manière, le projet devient vite difficile à contrôler. Le rôle d’une démarche DevOps est de rendre ce cycle plus fiable, plus automatisé et plus traçable.
+# Chapitre 1 — Du conteneur local à la livraison automatisée
 
-## Du code à la production
+Une application peut très bien fonctionner sur une machine locale et échouer au moment du déploiement. Les causes sont souvent les mêmes : version différente de Node.js, dépendance oubliée, variable d’environnement absente, commande de démarrage différente ou configuration non documentée.
 
-Le chemin classique d’une modification ressemble à ceci :
+Docker réduit ce problème en emballant l’application et son environnement d’exécution dans une image.
 
 ```text
-une demande métier
-  ↓
-une branche Git
-  ↓
-du code
-  ↓
-une pull request
-  ↓
-des validations automatiques
-  ↓
-un artefact
-  ↓
-un déploiement
-  ↓
-une version en production
+Code source
+   ↓
+Dockerfile
+   ↓
+Image Docker
+   ↓
+Conteneur
 ```
 
-Chaque étape ajoute un niveau de confiance.
+L’image Docker devient une unité de livraison. Elle contient ce qu’il faut pour démarrer l’application de façon prévisible.
 
-Le code seul ne suffit pas. Il faut pouvoir répondre à des questions très concrètes :
+Dans ce cours, le fil conducteur est une petite API appelée **Croissant API**.
 
 ```text
-Qui a modifié cette fonctionnalité ?
-Quels tests ont été exécutés ?
-Quelle version est actuellement en production ?
-Comment revenir à la version précédente ?
-Où sont stockés les secrets ?
-Qui a validé le passage en production ?
+Croissant API
+   ├── une route /
+   ├── une route /health
+   ├── une route /version
+   └── une route /products
 ```
 
-Un bon pipeline CI/CD permet de répondre à ces questions.
+L’application est volontairement simple. Le sujet n’est pas de développer une API complexe, mais de suivre son trajet complet : du code GitHub jusqu’à une application déployée sur Azure.
 
-## Intégration continue
+## Le chemin complet
 
-L’intégration continue, ou **CI** pour *Continuous Integration*, consiste à vérifier automatiquement le code dès qu’il est proposé dans le repository.
-
-Elle répond à la question :
-
-> Est-ce que le code peut être intégré sans casser l’application ?
-
-Une CI classique exécute plusieurs étapes :
+Le trajet Docker-first est le suivant :
 
 ```text
-récupérer le code
-  ↓
-installer les dépendances
-  ↓
-compiler ou préparer l’application
-  ↓
+GitHub
+   ↓
+Azure Pipelines
+   ↓
+Tests automatisés
+   ↓
+Build de l’image Docker
+   ↓
+Push de l’image dans Azure Container Registry
+   ↓
+Déploiement de l’image sur Azure App Service
+   ↓
+Validation en staging
+   ↓
+Bascule en production
+```
+
+Cette chaîne contient trois familles d’outils.
+
+| Élément | Rôle |
+|---|---|
+| GitHub | stocke le code source |
+| Azure DevOps / Azure Pipelines | automatise les tests, le build et le déploiement |
+| Azure | héberge les ressources réelles : registry, application, configuration, logs |
+
+Azure DevOps ne fait pas tourner l’application finale. Il orchestre le processus. L’application tourne dans Azure.
+
+## CI et CD avec Docker
+
+La CI vérifie que le code est intégrable.
+
+```text
+push ou pull request
+   ↓
+installer / vérifier
+   ↓
 lancer les tests
-  ↓
-publier les résultats
-  ↓
-produire un artefact
+   ↓
+construire l’image Docker
 ```
 
-La CI détecte les problèmes tôt. Plus un bug est découvert tard, plus il coûte cher à corriger.
-
-## Déploiement continu
-
-Le déploiement continu, ou **CD** pour *Continuous Delivery* ou *Continuous Deployment*, prend le relais après la CI.
-
-Il répond à la question :
-
-> Comment mettre une version validée dans le bon environnement ?
-
-Un CD classique ressemble à ceci :
+Le CD déploie une version validée.
 
 ```text
-prendre l’artefact validé
-  ↓
-choisir un environnement cible
-  ↓
-appliquer la configuration de cet environnement
-  ↓
-déployer
-  ↓
-vérifier que l’application répond
-  ↓
-promouvoir vers l’environnement suivant
+image Docker validée
+   ↓
+registry
+   ↓
+environnement dev ou staging
+   ↓
+production
 ```
 
-La différence entre les deux sens de CD est importante :
+Avec Docker, l’artefact principal n’est plus un `.zip` ou un dossier `dist/`. L’artefact principal devient l’image Docker.
 
-| Terme | Sens |
-|---|---|
-| Continuous Delivery | la version est prête à être livrée, mais une validation humaine peut être demandée |
-| Continuous Deployment | la version est déployée automatiquement jusqu’en production |
-
-Dans beaucoup d’entreprises, le déploiement en production reste protégé par une approbation humaine.
-
-## Environnements
-
-Une application passe généralement par plusieurs environnements avant d’arriver aux utilisateurs réels.
+Exemple :
 
 ```text
-local → dev → test/staging → production
+croissant-api:42
+croissant-api:1.0.0
+croissant-api:main-20260605
 ```
 
-| Environnement | Rôle |
-|---|---|
-| local | machine du développeur |
-| dev | intégration rapide des changements |
-| test / staging | validation proche de la production |
-| production | environnement utilisé par les vrais utilisateurs |
+Une image Docker versionnée permet de répondre clairement à la question :
 
-Un environnement n’est pas seulement une URL. C’est un ensemble de ressources et de paramètres :
+> Quelle version exacte tourne dans cet environnement ?
+
+## Le principe “build once, deploy many”
+
+Une erreur fréquente consiste à reconstruire l’application pour chaque environnement.
 
 ```text
-application
-base de données
-variables de configuration
-secrets
-logs
-monitoring
-permissions
-règles de déploiement
+build image pour dev
+build image pour staging
+build image pour prod
 ```
 
-La règle importante est la suivante :
+Ce modèle est risqué, car la production ne reçoit pas forcément exactement ce qui a été testé.
 
-> On évite de changer le code entre les environnements. On change la configuration.
+On préfère :
+
+```text
+une image Docker construite une fois
+   ↓
+déployée en dev
+   ↓
+déployée en staging
+   ↓
+déployée en production
+```
+
+Ce qui change entre les environnements n’est pas l’image. C’est la configuration.
 
 Exemple :
 
 | Élément | Dev | Production |
 |---|---|---|
-| URL API | `https://api-dev.example.com` | `https://api.example.com` |
-| Base de données | `croissant-dev-db` | `croissant-prod-db` |
-| Logs | détaillés | contrôlés |
-| Secrets | secrets de test | secrets réels |
+| Image Docker | `croissant-api:42` | `croissant-api:42` |
+| `ENVIRONMENT_NAME` | `dev` | `production` |
+| `LOG_LEVEL` | `debug` | `info` |
+| URL publique | dev | prod |
 
-## Artefact
+La même image peut donc afficher ou utiliser une configuration différente selon l’environnement.
 
-Un artefact est le résultat exploitable d’un build.
+## Pourquoi garder Docker au centre du cours
 
-Exemples :
+Docker donne un support concret pour comprendre la CI/CD.
+
+Sans Docker :
 
 ```text
-un fichier .zip
-une image Docker
-un package NuGet
-un package npm
-un fichier .jar
-un dossier dist/
+Le pipeline produit quelque chose d’un peu abstrait : package, zip, build, dossier.
 ```
 
-La pratique recommandée est souvent résumée ainsi :
-
-> Build once, deploy everywhere.
-
-Cela signifie que l’application est construite une seule fois, puis que le même artefact est déployé dans les différents environnements.
-
-On évite ce scénario :
+Avec Docker :
 
 ```text
-build spécifique pour dev
-build spécifique pour test
-build spécifique pour prod
+Le pipeline produit une image que l’on peut lancer partout de la même manière.
 ```
 
-On préfère :
+Localement :
 
-```text
-un seul build
-  ↓
-un seul artefact
-  ↓
-déploiement en dev
-  ↓
-déploiement en staging
-  ↓
-déploiement en production
+```bash
+docker run -p 8080:8080 croissant-api:local
 ```
 
-Cette approche réduit les écarts entre ce qui a été testé et ce qui est réellement mis en production.
-# 2. Azure DevOps dans le cycle de vie
-
-Azure DevOps est une plateforme qui regroupe plusieurs services utilisés dans le cycle de vie applicatif.
-
-Dans ce cours, l’application **Croissant API** passera par ces services :
+Dans Azure :
 
 ```text
-Azure Boards      → suivre le travail
-Azure Repos       → versionner le code
-Azure Pipelines   → construire, tester et déployer
-Azure Artifacts   → stocker des packages ou artefacts
-Azure Test Plans  → organiser des tests manuels avancés
+Azure App Service lance cette même image depuis Azure Container Registry.
 ```
 
-Le cœur du cours est **Azure Pipelines**, mais les autres services donnent le contexte.
-
-## Organisation, projet et repository
-
-Azure DevOps est structuré en niveaux.
+Le lien devient simple :
 
 ```text
-Organisation
-  └── Projet
-        ├── Repos
-        ├── Pipelines
-        ├── Boards
-        ├── Artifacts
-        └── Environments
+Dockerfile = recette de construction
+Image Docker = version livrable
+Registry = entrepôt d’images
+App Service = endroit où l’image tourne
+Pipeline = automatisation du chemin
 ```
 
-Une **organisation** représente généralement une entreprise, une entité ou un espace de travail global.
 
-Un **projet** regroupe les éléments liés à une application, un produit ou une équipe.
 
-Un **repository** contient le code source.
+---
 
-Pour Croissant API, on peut imaginer :
+
+# Chapitre 2 — GitHub comme source du code, Azure Pipelines comme moteur
+
+Le code de Croissant API vit dans GitHub.
 
 ```text
-Organisation : BoulangerieCloud
-Projet       : CroissantAPI
-Repository   : croissant-api
+GitHub
+   └── croissant-api
+        ├── src/
+        ├── test/
+        ├── Dockerfile
+        ├── package.json
+        └── azure-pipelines.yml
 ```
 
-## Azure Boards
+Azure DevOps n’a pas besoin de posséder ce code dans Azure Repos. Azure Pipelines peut être connecté à un repository GitHub.
 
-Azure Boards sert à suivre le travail.
-
-On y trouve des éléments comme :
+Cela donne l’architecture suivante :
 
 ```text
-Epic
-Feature
-User Story
-Task
-Bug
+GitHub contient le code
+        ↓
+Azure Pipelines récupère le code
+        ↓
+Azure Pipelines exécute le YAML
+        ↓
+Azure reçoit l’image ou le déploiement
+```
+
+## Ce que signifie “Azure Pipelines lit le repo GitHub”
+
+Quand un pipeline est connecté à GitHub, Azure DevOps a l’autorisation de consulter le repository sélectionné. Lorsqu’un événement se produit, par exemple un push ou une pull request, Azure Pipelines démarre un run.
+
+Le run exécute en gros cette logique :
+
+```text
+1. démarrer un agent
+2. faire un checkout du repository GitHub
+3. lire azure-pipelines.yml
+4. exécuter les étapes décrites dans le YAML
+```
+
+L’agent exécute les commandes sur une copie du code.
+
+```text
+GitHub
+   ↓ checkout
+Agent Azure Pipelines
+   ↓
+npm test
+   ↓
+docker build
+   ↓
+docker push
+```
+
+Le code reste dans GitHub. Azure Pipelines ne remplace pas GitHub. Il se branche dessus.
+
+## GitHub comme source de vérité
+
+Si une équipe utilise déjà GitHub, il est souvent plus simple de le garder comme source principale.
+
+```text
+GitHub = code source et pull requests
+Azure Pipelines = automatisation CI/CD
+Azure = hébergement et services cloud
+```
+
+Importer un repo GitHub dans Azure Repos crée une copie. Cette copie ne se synchronise pas automatiquement avec GitHub, sauf si une synchronisation est mise en place séparément.
+
+Dans ce cours, le modèle reste donc :
+
+```text
+GitHub d’abord
+Azure Pipelines ensuite
+Azure comme cible finale
+```
+
+## Événements qui déclenchent le pipeline
+
+Un pipeline peut réagir à plusieurs événements.
+
+| Événement | Utilisation |
+|---|---|
+| push sur `main` | construire et livrer une version |
+| pull request vers `main` | valider avant intégration |
+| tag Git | créer une version officielle |
+| exécution manuelle | relancer ou déployer une version particulière |
+
+Exemple YAML :
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+```
+
+Ici :
+
+```text
+push sur main → pipeline
+pull request vers main → pipeline
+```
+
+## Pull request et CI
+
+La pull request est un point de contrôle.
+
+```text
+branche feature
+   ↓
+pull request
+   ↓
+CI automatique
+   ↓
+review humaine
+   ↓
+merge vers main
+```
+
+Le pipeline exécuté sur pull request ne doit pas forcément déployer. Il doit surtout vérifier.
+
+```text
+vérifier les tests
+vérifier le Dockerfile
+vérifier que l’image peut être construite
+```
+
+Le pipeline sur `main`, lui, peut produire et pousser une image versionnée dans un registry.
+
+```text
+merge vers main
+   ↓
+tests
+   ↓
+docker build
+   ↓
+docker push
+```
+
+## Azure DevOps et GitHub : rôle de l’autorisation
+
+Pour qu’Azure Pipelines puisse accéder à GitHub, une autorisation est nécessaire. Elle se fait lors de la création du pipeline dans Azure DevOps.
+
+Chemin typique :
+
+```text
+Azure DevOps
+   ↓
+Pipelines
+   ↓
+New pipeline
+   ↓
+GitHub
+   ↓
+Sélectionner le repository
+   ↓
+Choisir ou créer azure-pipelines.yml
+```
+
+Une fois la connexion créée, Azure DevOps peut réagir aux changements du repo GitHub.
+
+## Ce qu’il faut retenir
+
+```text
+GitHub garde le code.
+Azure Pipelines récupère le code au moment du run.
+azure-pipelines.yml décrit ce qu’il faut faire.
+L’agent exécute les commandes.
+Azure reçoit l’image ou le déploiement.
+```
+
+
+
+---
+
+
+# Chapitre 3 — `azure-pipelines.yml` et Pipeline as Code
+
+Le fichier `azure-pipelines.yml` décrit le pipeline CI/CD.
+
+Il dit à Azure DevOps :
+
+```text
+quand lancer le pipeline
+sur quelle machine travailler
+quelles étapes exécuter
+quelles variables utiliser
+quels environnements cibler
+comment enchaîner build, tests et déploiement
+```
+
+Comme ce fichier est stocké dans GitHub avec le code, le pipeline devient versionné.
+
+```text
+code applicatif + code du pipeline = même historique Git
+```
+
+C’est le principe de **Pipeline as Code**.
+
+## Un pipeline minimal
+
+```yaml
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - script: echo "Bonjour depuis Azure Pipelines"
+```
+
+Ce pipeline :
+
+```text
+se déclenche sur main
+utilise un agent Ubuntu
+exécute une commande shell
+```
+
+## Agent
+
+L’agent est la machine qui exécute le pipeline.
+
+```text
+Azure Pipelines
+   ↓
+démarre un agent
+   ↓
+checkout du code
+   ↓
+exécution des steps
+```
+
+Avec un agent Microsoft-hosted, Azure fournit une machine temporaire.
+
+Exemple :
+
+```yaml
+pool:
+  vmImage: ubuntu-latest
+```
+
+Pour commencer, `ubuntu-latest` suffit largement. L’agent contient déjà beaucoup d’outils courants. Pour Docker, il est adapté aux démonstrations standards de build d’image.
+
+## Steps
+
+Les steps sont les actions concrètes.
+
+```yaml
+steps:
+  - script: npm test
+  - script: docker build -t croissant-api:local .
+```
+
+Un step peut être une commande directe ou une tâche Azure DevOps.
+
+Commande directe :
+
+```yaml
+- script: docker build -t croissant-api:$(Build.BuildId) .
+```
+
+Tâche Azure DevOps :
+
+```yaml
+- task: Docker@2
+  inputs:
+    command: build
+    Dockerfile: Dockerfile
+```
+
+## Stages, jobs, steps
+
+Un pipeline sérieux est souvent structuré en stages.
+
+```text
+Pipeline
+   ├── Stage: Test
+   │      └── Job
+   │            └── Steps
+   ├── Stage: Build_Image
+   │      └── Job
+   │            └── Steps
+   └── Stage: Deploy
+          └── Job
+                └── Steps
 ```
 
 Exemple :
 
-```text
-Feature : Exposer une API de commande
-User Story : En tant que client, je veux consulter la liste des croissants disponibles
-Task : Créer la route GET /croissants
-Bug : La route /health retourne une erreur 500
+```yaml
+stages:
+  - stage: Test
+    jobs:
+      - job: RunTests
+        steps:
+          - script: npm test
+
+  - stage: Build_Image
+    dependsOn: Test
+    jobs:
+      - job: DockerBuild
+        steps:
+          - script: docker build -t croissant-api:$(Build.BuildId) .
 ```
 
-Dans un cycle DevOps complet, les work items peuvent être reliés aux branches, commits, pull requests et déploiements.
-
-## Azure Repos
-
-Azure Repos héberge le code source Git.
-
-Il permet de travailler avec :
+`dependsOn` impose l’ordre.
 
 ```text
-commits
-branches
-pull requests
-politiques de branches
-historique du code
+Build_Image attend Test
 ```
 
-Le repository est le point de départ du pipeline. Quand du code est poussé sur une branche, Azure Pipelines peut démarrer automatiquement.
+## Variables
 
-## Azure Pipelines
+Les variables évitent de répéter des valeurs.
 
-Azure Pipelines est le service qui exécute la CI/CD.
+```yaml
+variables:
+  imageName: croissant-api
+  imageTag: $(Build.BuildId)
 
-Il automatise :
+steps:
+  - script: docker build -t $(imageName):$(imageTag) .
+```
+
+Azure Pipelines fournit aussi des variables système.
+
+| Variable | Signification |
+|---|---|
+| `$(Build.BuildId)` | identifiant unique du run |
+| `$(Build.SourceBranchName)` | nom de la branche |
+| `$(Build.Repository.Name)` | nom du repository |
+| `$(System.DefaultWorkingDirectory)` | dossier de travail |
+
+Pour taguer une image Docker, `$(Build.BuildId)` est pratique.
 
 ```text
-installation des dépendances
-build
-tests
-publication d’artefact
-déploiement
-approbations
-promotion entre environnements
+croissant-api:128
+croissant-api:129
+croissant-api:130
 ```
 
-Un pipeline peut être défini dans un fichier YAML versionné avec le code.
+## Pourquoi le YAML est important
 
-Exemple de fichier :
+Sans fichier YAML, une partie de la logique de livraison vit dans l’interface graphique.
+
+Avec un fichier YAML :
 
 ```text
-azure-pipelines.yml
+le pipeline est relu en pull request
+le pipeline est historisé
+le pipeline peut être copié
+le pipeline peut être corrigé comme du code
+le pipeline suit les branches
 ```
 
-Ce fichier devient une partie du projet. Il peut être relu en pull request, modifié, historisé et restauré.
+Un changement de pipeline peut donc passer par la même discipline qu’un changement applicatif.
 
-## Azure Artifacts
+```text
+branche
+   ↓
+modification YAML
+   ↓
+pull request
+   ↓
+review
+   ↓
+merge
+```
 
-Azure Artifacts sert à héberger des packages privés.
+## Premier pipeline Docker-first
+
+```yaml
+trigger:
+  - main
+
+pr:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: croissant-api
+  imageTag: $(Build.BuildId)
+
+steps:
+  - script: npm test
+    displayName: "Lancer les tests"
+
+  - script: docker build -t $(imageName):$(imageTag) .
+    displayName: "Construire l'image Docker"
+```
+
+Ce pipeline ne pousse pas encore l’image dans un registry. Il vérifie déjà deux choses essentielles :
+
+```text
+les tests passent
+l’image Docker peut être construite
+```
+
+
+
+---
+
+
+# Chapitre 4 — Dockerfile et application de démo
+
+Croissant API est une petite application Node.js sans dépendance externe. Elle utilise le module HTTP natif de Node.js.
+
+Structure :
+
+```text
+croissant-api/
+   ├── src/
+   │   ├── app.js
+   │   └── server.js
+   ├── test/
+   │   └── app.test.js
+   ├── Dockerfile
+   ├── .dockerignore
+   ├── docker-compose.yml
+   └── package.json
+```
+
+## Lancer l’application localement
+
+```bash
+npm test
+npm start
+```
+
+L’application écoute par défaut sur le port `8080`.
+
+```bash
+curl http://localhost:8080/health
+```
+
+Réponse attendue :
+
+```json
+{
+  "status": "ok"
+}
+```
+
+## Construire l’image Docker localement
+
+```bash
+docker build -t croissant-api:local .
+```
+
+Lancer le conteneur :
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e ENVIRONMENT_NAME=local \
+  -e APP_VERSION=local \
+  croissant-api:local
+```
+
+Tester :
+
+```bash
+curl http://localhost:8080/version
+```
+
+Réponse typique :
+
+```json
+{
+  "name": "croissant-api",
+  "version": "local",
+  "environment": "local"
+}
+```
+
+## Dockerfile
+
+Le Dockerfile est la recette de construction de l’image.
+
+```dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV PORT=8080
+
+COPY package*.json ./
+RUN npm install --omit=dev
+
+COPY src ./src
+
+EXPOSE 8080
+
+CMD ["node", "src/server.js"]
+```
+
+Lecture ligne par ligne :
+
+| Ligne | Rôle |
+|---|---|
+| `FROM node:20-alpine` | image de base avec Node.js |
+| `WORKDIR /app` | dossier de travail dans l’image |
+| `ENV PORT=8080` | port par défaut de l’application |
+| `COPY package*.json ./` | copie des métadonnées npm |
+| `RUN npm install --omit=dev` | installe les dépendances de production |
+| `COPY src ./src` | copie le code applicatif |
+| `EXPOSE 8080` | documente le port exposé |
+| `CMD ...` | commande lancée au démarrage du conteneur |
+
+## `.dockerignore`
+
+Le fichier `.dockerignore` évite d’envoyer des fichiers inutiles au build Docker.
+
+```text
+node_modules
+.git
+.azure
+coverage
+*.log
+.env
+```
+
+Cela accélère le build et évite d’inclure des fichiers sensibles ou inutiles dans l’image.
+
+## Docker Compose
+
+Pour lancer la démo plus facilement :
+
+```yaml
+services:
+  api:
+    build: .
+    image: croissant-api:local
+    ports:
+      - "8080:8080"
+    environment:
+      ENVIRONMENT_NAME: local
+      APP_VERSION: docker-compose
+      LOG_LEVEL: debug
+```
+
+Commande :
+
+```bash
+docker compose up --build
+```
+
+## Ce que le pipeline devra reproduire
+
+Localement, on fait :
+
+```bash
+npm test
+docker build -t croissant-api:local .
+docker run -p 8080:8080 croissant-api:local
+```
+
+Dans Azure Pipelines, on va automatiser la même logique :
+
+```text
+checkout GitHub
+   ↓
+npm test
+   ↓
+docker build
+   ↓
+smoke test du conteneur
+```
+
+Le pipeline ne fait donc pas de magie. Il automatise ce qui peut déjà être fait localement.
+
+
+
+---
+
+
+# Chapitre 5 — CI Docker-first : tests, build image et smoke test
+
+La CI Docker-first doit vérifier trois choses.
+
+```text
+1. le code passe les tests
+2. l’image Docker peut être construite
+3. le conteneur démarre et répond
+```
+
+Le troisième point est important. Une image peut se construire correctement mais échouer au démarrage.
+
+## Étape 1 — tests applicatifs
+
+```yaml
+- script: npm test
+  displayName: "Lancer les tests Node.js"
+```
+
+Ces tests vérifient le comportement du code.
 
 Exemples :
 
 ```text
-packages npm
-packages NuGet
-packages Maven
-packages Python
+/health retourne status ok
+/version retourne le nom de l’application
+/products retourne une liste de produits
 ```
 
-Dans le cas d’un pipeline, le mot **artefact** peut aussi désigner le résultat publié par le build : un zip, un dossier ou un package prêt à déployer.
+## Étape 2 — build Docker
+
+```yaml
+- script: docker build -t croissant-api:$(Build.BuildId) .
+  displayName: "Construire l'image Docker"
+```
+
+Le tag utilise l’identifiant du build.
+
+```text
+croissant-api:125
+croissant-api:126
+croissant-api:127
+```
+
+Ce tag permet de retrouver précisément quelle image vient de quel run.
+
+## Étape 3 — smoke test du conteneur
+
+Un smoke test est une vérification rapide après démarrage.
+
+```yaml
+- script: |
+    docker run -d --name croissant-api-test -p 8080:8080 croissant-api:$(Build.BuildId)
+    sleep 5
+    curl --fail http://localhost:8080/health
+    docker rm -f croissant-api-test
+  displayName: "Smoke test du conteneur"
+```
+
+Cette étape vérifie que :
+
+```text
+le conteneur démarre
+le port est exposé correctement
+l’endpoint /health répond
+```
+
+## Pipeline CI complet
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageName: croissant-api
+  imageTag: $(Build.BuildId)
+
+stages:
+  - stage: CI
+    displayName: "CI Docker-first"
+    jobs:
+      - job: TestBuildAndSmoke
+        displayName: "Tests, image et smoke test"
+        steps:
+          - checkout: self
+
+          - script: npm test
+            displayName: "Lancer les tests"
+
+          - script: docker build -t $(imageName):$(imageTag) .
+            displayName: "Construire l'image Docker"
+
+          - script: |
+              docker run -d --name croissant-api-test -p 8080:8080 $(imageName):$(imageTag)
+              sleep 5
+              curl --fail http://localhost:8080/health
+              docker rm -f croissant-api-test
+            displayName: "Smoke test du conteneur"
+```
+
+Ce pipeline ne déploie rien. Il garantit que l’application est testée et conteneurisable.
+
+## CI sur pull request vs CI sur main
+
+Sur pull request, il suffit souvent de tester et construire l’image sans la publier.
+
+```text
+pull request
+   ↓
+npm test
+   ↓
+docker build
+   ↓
+smoke test
+```
+
+Sur `main`, on peut aller plus loin et publier l’image dans un registry.
+
+```text
+merge vers main
+   ↓
+npm test
+   ↓
+docker build
+   ↓
+docker push
+```
+
+Cette séparation évite de remplir le registry avec des images de toutes les branches de travail.
+
+## Échec du pipeline
+
+Si une étape échoue, le pipeline s’arrête.
+
+Exemples :
+
+```text
+un test échoue
+le Dockerfile est invalide
+le conteneur ne démarre pas
+/health ne répond pas
+```
+
+La CI donne alors un feedback rapide. La correction se fait avant de déployer.
+
+
+
+---
+
+
+# Chapitre 6 — Registry et Azure Container Registry
+
+Une image Docker construite sur un agent Azure Pipelines disparaît à la fin du run si elle n’est pas publiée.
+
+L’agent est temporaire.
+
+```text
+run du pipeline
+   ↓
+agent temporaire
+   ↓
+image construite localement sur l’agent
+   ↓
+fin du run
+   ↓
+agent supprimé
+```
+
+Pour réutiliser l’image, il faut la pousser dans un registry.
+
+## Registry
+
+Un registry est un entrepôt d’images Docker.
+
+Exemples :
+
+```text
+Docker Hub
+GitHub Container Registry
+Azure Container Registry
+```
+
+Dans Azure, le registry s’appelle **Azure Container Registry**, souvent abrégé **ACR**.
+
+```text
+Azure Container Registry
+   ↓
+croissantregistry.azurecr.io/croissant-api:128
+```
+
+## Pourquoi ACR dans ce cours
+
+Comme la cible de déploiement est Azure, ACR est un choix naturel.
+
+```text
+Azure Pipelines
+   ↓
+docker build
+   ↓
+docker push vers ACR
+   ↓
+Azure App Service récupère l’image depuis ACR
+```
+
+Le registry devient le point de passage entre CI et CD.
+
+```text
+CI produit l’image
+Registry stocke l’image
+CD déploie l’image
+```
+
+## Tag d’image
+
+Le tag identifie une version de l’image.
+
+```text
+croissant-api:128
+croissant-api:main-128
+croissant-api:1.0.0
+```
+
+Éviter de se baser uniquement sur `latest`.
+
+```text
+latest ne dit pas précisément quelle version tourne
+```
+
+Préférer un tag traçable :
+
+```text
+$(Build.BuildId)
+$(Build.SourceBranchName)-$(Build.BuildId)
+v1.2.0
+```
+
+Exemple :
+
+```yaml
+variables:
+  imageRepository: croissant-api
+  imageTag: $(Build.BuildId)
+```
+
+## Docker@2
+
+Azure Pipelines propose une tâche Docker.
+
+```yaml
+- task: Docker@2
+  displayName: "Build and push"
+  inputs:
+    command: buildAndPush
+    repository: $(imageRepository)
+    dockerfile: Dockerfile
+    containerRegistry: acr-service-connection
+    tags: |
+      $(imageTag)
+```
+
+Cette tâche fait deux choses :
+
+```text
+docker build
+docker push
+```
+
+`containerRegistry` référence une service connection vers le registry.
+
+## Service connection Docker Registry
+
+Le pipeline doit être autorisé à pousser dans ACR.
+
+Dans Azure DevOps :
+
+```text
+Project Settings
+   ↓
+Service connections
+   ↓
+New service connection
+   ↓
+Docker Registry
+   ↓
+Azure Container Registry
+```
+
+Nom possible :
+
+```text
+sc-acr-croissant
+```
+
+Dans le YAML :
+
+```yaml
+containerRegistry: sc-acr-croissant
+```
+
+## Pipeline build and push
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageRepository: croissant-api
+  imageTag: $(Build.BuildId)
+  dockerfilePath: Dockerfile
+
+stages:
+  - stage: Test
+    jobs:
+      - job: Tests
+        steps:
+          - script: npm test
+
+  - stage: Build_And_Push
+    dependsOn: Test
+    jobs:
+      - job: DockerBuildPush
+        steps:
+          - task: Docker@2
+            displayName: "Build and push vers ACR"
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              containerRegistry: sc-acr-croissant
+              tags: |
+                $(imageTag)
+```
+
+Résultat :
+
+```text
+ACR contient croissant-api:<BuildId>
+```
+
+Le CD pourra ensuite déployer cette image.
+
+
+
+---
+
+
+# Chapitre 7 — Azure comme cible de déploiement
+
+Jusqu’ici, le pipeline a produit une image Docker et l’a poussée dans un registry.
+
+```text
+GitHub
+   ↓
+Azure Pipelines
+   ↓
+Image Docker
+   ↓
+Azure Container Registry
+```
+
+Il manque encore une pièce : l’endroit où l’application tourne.
+
+Dans ce cours, la cible principale est **Azure App Service for Containers**.
+
+```text
+Azure Container Registry
+   ↓
+Azure App Service
+   ↓
+URL publique
+```
+
+## Azure DevOps vs Azure
+
+Il faut garder la distinction claire.
+
+| Élément | Rôle |
+|---|---|
+| Azure DevOps | automatise la chaîne CI/CD |
+| Azure | héberge les ressources qui exécutent l’application |
+
+Azure DevOps orchestre.
+
+Azure héberge.
+
+## Resource Group
+
+Un Resource Group est un conteneur logique de ressources Azure.
+
+Exemple :
+
+```text
+rg-croissant-demo
+```
+
+Il peut contenir :
+
+```text
+Azure Container Registry
+App Service Plan
+App Service
+Deployment Slot
+Key Vault
+Application Insights
+```
+
+Supprimer le Resource Group supprime généralement les ressources qu’il contient. C’est pratique pour nettoyer une démo.
+
+## Azure Container Registry
+
+ACR stocke les images.
+
+```text
+croissantregistry.azurecr.io/croissant-api:128
+```
+
+C’est une ressource Azure.
+
+## App Service Plan
+
+App Service Plan représente la capacité d’hébergement.
+
+```text
+App Service Plan
+   ↓
+CPU / mémoire / région / niveau de prix
+```
+
+L’App Service tourne dans un App Service Plan.
+
+## Azure App Service for Containers
+
+App Service for Containers exécute une image Docker.
+
+```text
+Image Docker dans ACR
+   ↓
+App Service récupère l’image
+   ↓
+Conteneur démarré
+   ↓
+Application disponible via une URL
+```
+
+Exemple d’URL :
+
+```text
+https://croissant-api-demo.azurewebsites.net
+```
+
+## Configuration du port
+
+Croissant API écoute sur le port `8080`.
+
+Dans App Service, on configure généralement :
+
+```text
+WEBSITES_PORT=8080
+```
+
+Cette variable indique à App Service quel port le conteneur expose.
+
+## Application Settings
+
+Les Application Settings sont des variables d’environnement injectées dans l’application.
+
+Exemples :
+
+```text
+ENVIRONMENT_NAME=dev
+APP_VERSION=128
+LOG_LEVEL=info
+WEBSITES_PORT=8080
+```
+
+Dans le code, l’application lit ces variables.
+
+```js
+process.env.ENVIRONMENT_NAME
+process.env.APP_VERSION
+```
+
+Cela permet d’utiliser la même image avec une configuration différente.
+
+```text
+croissant-api:128 + ENVIRONMENT_NAME=dev
+croissant-api:128 + ENVIRONMENT_NAME=staging
+croissant-api:128 + ENVIRONMENT_NAME=production
+```
+
+## Création des ressources avec Azure CLI
+
+Exemple simplifié :
+
+```bash
+az group create \
+  --name rg-croissant-demo \
+  --location westeurope
+
+az acr create \
+  --resource-group rg-croissant-demo \
+  --name croissantregistrydemo \
+  --sku Basic
+
+az appservice plan create \
+  --resource-group rg-croissant-demo \
+  --name plan-croissant-demo \
+  --is-linux \
+  --sku B1
+
+az webapp create \
+  --resource-group rg-croissant-demo \
+  --plan plan-croissant-demo \
+  --name croissant-api-demo \
+  --deployment-container-image-name croissantregistrydemo.azurecr.io/croissant-api:1
+```
+
+Ces commandes créent le terrain de déploiement. Dans la suite, le pipeline mettra à jour l’image utilisée par l’App Service.
+
+## Le flux Azure complet
+
+```text
+Azure Container Registry
+   stocke l’image
+
+Azure App Service
+   lance l’image
+
+Application Settings
+   configurent le conteneur
+
+Log Stream
+   permet de lire les logs au démarrage
+```
+
+
+
+---
+
+
+# Chapitre 8 — CD : déployer l’image Docker
+
+Le CD commence quand une image Docker validée existe dans le registry.
+
+```text
+ACR contient croissant-api:128
+   ↓
+le pipeline déploie cette image
+   ↓
+App Service lance croissant-api:128
+```
+
+## Déployer une image sur App Service
+
+Azure Pipelines propose la tâche `AzureWebAppContainer@1`.
+
+Exemple :
+
+```yaml
+- task: AzureWebAppContainer@1
+  displayName: "Déployer l'image sur App Service"
+  inputs:
+    azureSubscription: sc-azure-croissant
+    appName: croissant-api-demo
+    containers: croissantregistrydemo.azurecr.io/croissant-api:$(Build.BuildId)
+```
+
+`azureSubscription` référence une service connection Azure Resource Manager.
+
+`containers` indique l’image à lancer.
+
+## Service connection Azure Resource Manager
+
+Pour déployer dans Azure, Azure Pipelines doit être autorisé à agir sur l’abonnement Azure.
+
+Dans Azure DevOps :
+
+```text
+Project Settings
+   ↓
+Service connections
+   ↓
+New service connection
+   ↓
+Azure Resource Manager
+```
+
+Nom possible :
+
+```text
+sc-azure-croissant
+```
+
+Le pipeline utilise cette connexion pour modifier l’App Service.
+
+## Pipeline avec CI + push + déploiement dev
+
+```yaml
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageRepository: croissant-api
+  imageTag: $(Build.BuildId)
+  acrLoginServer: croissantregistrydemo.azurecr.io
+  devAppName: croissant-api-dev
+
+stages:
+  - stage: Test
+    jobs:
+      - job: Tests
+        steps:
+          - script: npm test
+
+  - stage: Build_And_Push
+    dependsOn: Test
+    jobs:
+      - job: BuildPush
+        steps:
+          - task: Docker@2
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: Dockerfile
+              containerRegistry: sc-acr-croissant
+              tags: |
+                $(imageTag)
+
+  - stage: Deploy_Dev
+    dependsOn: Build_And_Push
+    jobs:
+      - deployment: DeployDev
+        environment: croissant-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebAppContainer@1
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    appName: $(devAppName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+```
+
+Ici, le déploiement dépend du build and push.
+
+```text
+Test → Build_And_Push → Deploy_Dev
+```
+
+## Deployment job
+
+Le job de déploiement utilise le mot-clé `deployment`.
+
+```yaml
+- deployment: DeployDev
+  environment: croissant-dev
+```
+
+Cela permet à Azure DevOps d’associer le run à un environnement.
+
+Les environnements Azure DevOps servent à :
+
+```text
+tracer les déploiements
+ajouter des approbations
+appliquer des checks
+visualiser l’historique
+```
+
+## Smoke test après déploiement
+
+Après un déploiement, on vérifie que l’application répond.
+
+```yaml
+- script: curl --fail https://croissant-api-dev.azurewebsites.net/health
+  displayName: "Vérifier /health"
+```
+
+Le smoke test doit rester simple.
+
+```text
+l’application répond-elle ?
+la route /health est-elle OK ?
+la version retournée correspond-elle au tag attendu ?
+```
+
+## CD n’est pas forcément production
+
+Déployer en dev ou staging fait déjà partie du CD.
+
+```text
+CD = automatiser la livraison vers un environnement
+```
+
+La production peut rester protégée par une validation humaine.
+
+```text
+déploiement automatique en dev
+   ↓
+déploiement automatique en staging
+   ↓
+approbation
+   ↓
+production
+```
+
+
+
+---
+
+
+# Chapitre 9 — Environnements et configuration
+
+Une application n’est pas déployée directement en production sans étape intermédiaire.
+
+On utilise plusieurs environnements.
+
+```text
+dev → staging → production
+```
+
+Avec Docker, l’objectif est de garder la même image et de changer uniquement la configuration.
+
+```text
+même image Docker
+   ↓
+configuration dev
+   ↓
+configuration staging
+   ↓
+configuration production
+```
+
+## Environnement Azure DevOps vs environnement Azure
+
+Le mot environnement peut désigner deux choses.
+
+| Élément | Signification |
+|---|---|
+| Environnement Azure DevOps | objet de pipeline pour approvals, checks, historique |
+| Environnement Azure | ressources réelles : App Service, settings, logs, slots |
+
+Exemple :
+
+```text
+Azure DevOps environment: croissant-staging
+Azure resource: App Service croissant-api-prod slot staging
+```
+
+Les deux sont liés mais ne sont pas la même chose.
+
+## Configurer une application sans changer l’image
+
+Croissant API lit ses valeurs depuis les variables d’environnement.
+
+```text
+ENVIRONMENT_NAME
+APP_VERSION
+LOG_LEVEL
+```
+
+Dans App Service, ces valeurs se configurent dans Application Settings.
+
+Exemple dev :
+
+```text
+ENVIRONMENT_NAME=dev
+APP_VERSION=128
+LOG_LEVEL=debug
+WEBSITES_PORT=8080
+```
+
+Exemple production :
+
+```text
+ENVIRONMENT_NAME=production
+APP_VERSION=128
+LOG_LEVEL=info
+WEBSITES_PORT=8080
+```
+
+Le tag de l’image est le même :
+
+```text
+croissant-api:128
+```
+
+## Mettre à jour les settings avec Azure CLI
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-croissant-demo \
+  --name croissant-api-dev \
+  --settings \
+    ENVIRONMENT_NAME=dev \
+    LOG_LEVEL=debug \
+    WEBSITES_PORT=8080
+```
+
+Pour production :
+
+```bash
+az webapp config appsettings set \
+  --resource-group rg-croissant-demo \
+  --name croissant-api-prod \
+  --settings \
+    ENVIRONMENT_NAME=production \
+    LOG_LEVEL=info \
+    WEBSITES_PORT=8080
+```
+
+## Variables YAML
+
+Une variable YAML convient pour une valeur non sensible.
+
+```yaml
+variables:
+  imageRepository: croissant-api
+  acrLoginServer: croissantregistrydemo.azurecr.io
+```
+
+Ne pas mettre de secret dans le YAML.
+
+Mauvais exemple :
+
+```yaml
+variables:
+  databasePassword: "SuperSecret123"
+```
+
+## Variable groups
+
+Un Variable Group permet de stocker des variables partagées entre pipelines.
+
+Exemple :
+
+```text
+vg-croissant-dev
+   ENVIRONMENT_NAME=dev
+   LOG_LEVEL=debug
+   APP_SERVICE_NAME=croissant-api-dev
+
+vg-croissant-prod
+   ENVIRONMENT_NAME=production
+   LOG_LEVEL=info
+   APP_SERVICE_NAME=croissant-api-prod
+```
+
+Dans le YAML :
+
+```yaml
+variables:
+  - group: vg-croissant-dev
+```
+
+Les Variable Groups sont utiles quand plusieurs pipelines utilisent les mêmes valeurs.
+
+## Séparation code / configuration
+
+Le code reste identique.
+
+```text
+src/app.js
+Dockerfile
+image Docker
+```
+
+La configuration dépend de l’environnement.
+
+```text
+ENVIRONMENT_NAME
+LOG_LEVEL
+URL de base de données
+clé API
+```
+
+Cette séparation rend le déploiement plus fiable.
+
+```text
+On ne reconstruit pas pour changer d’environnement.
+On configure l’environnement cible.
+```
+
+
+
+---
+
+
+# Chapitre 10 — Secrets, service connections et Key Vault
+
+Un pipeline CD a besoin d’accéder à des ressources externes.
+
+Exemples :
+
+```text
+pousser une image dans ACR
+déployer sur App Service
+lire des secrets applicatifs
+modifier des settings Azure
+```
+
+Ces actions nécessitent des droits. Ces droits ne doivent pas être codés en dur dans le repository.
+
+## Ce qu’il ne faut jamais committer
+
+```text
+mot de passe
+clé API
+token
+connection string
+fichier .env réel
+clé privée
+publish profile
+PAT
+```
+
+Le repository doit contenir au maximum des exemples.
+
+```text
+.env.example
+```
+
+Pas :
+
+```text
+.env
+```
+
+## Service connection
+
+Une service connection est une identité utilisée par Azure Pipelines pour accéder à un service.
+
+Exemples :
+
+| Service connection | Sert à |
+|---|---|
+| Docker Registry / ACR | pousser une image Docker |
+| Azure Resource Manager | déployer dans Azure |
+| GitHub | accéder à un repo GitHub |
+
+Dans le YAML, on référence le nom de la service connection.
+
+```yaml
+containerRegistry: sc-acr-croissant
+```
+
+```yaml
+azureSubscription: sc-azure-croissant
+```
+
+Le secret n’apparaît pas dans le YAML. Le YAML ne contient que le nom logique de la connexion.
+
+## Principe du moindre privilège
+
+La service connection ne doit avoir que les droits nécessaires.
+
+Exemples :
+
+```text
+pousser dans ACR, pas administrer tout l’abonnement
+déployer sur un Resource Group, pas gérer toutes les ressources Azure
+lire des secrets précis, pas tout Key Vault
+```
+
+Plus les droits sont limités, plus l’impact d’une erreur est réduit.
+
+## Variables secrètes
+
+Dans Azure Pipelines, une variable peut être marquée comme secrète.
+
+```text
+Pipelines → Library → Variable Groups
+```
+
+Une variable secrète est masquée dans les logs.
+
+```text
+***
+```
+
+Mais il faut quand même éviter de l’afficher volontairement.
+
+## Azure Key Vault
+
+Azure Key Vault est le coffre-fort Azure pour les secrets.
+
+On peut y stocker :
+
+```text
+mots de passe
+connection strings
+certificats
+clés API
+```
+
+Un pipeline peut récupérer des secrets depuis Key Vault, ou un App Service peut lire ses secrets via des références Key Vault.
+
+## Variable Group lié à Key Vault
+
+Un Variable Group peut être lié à Key Vault.
+
+```text
+Azure Key Vault
+   ↓
+Variable Group Azure Pipelines
+   ↓
+Pipeline
+```
+
+Cela évite de copier manuellement les secrets dans Azure DevOps.
+
+## Différence entre configuration et secret
+
+| Valeur | Type | Où la mettre |
+|---|---|---|
+| nom de l’application | configuration | YAML ou Variable Group |
+| nom du Resource Group | configuration | YAML ou Variable Group |
+| `LOG_LEVEL=info` | configuration | App Settings |
+| mot de passe DB | secret | Key Vault |
+| clé API externe | secret | Key Vault |
+| token de déploiement | secret | Service connection |
+
+## Exemple de variable group
+
+```yaml
+variables:
+  - group: vg-croissant-dev
+```
+
+Puis dans le pipeline :
+
+```yaml
+- script: echo "Déploiement vers $(APP_SERVICE_NAME)"
+```
+
+Si `APP_SERVICE_NAME` est non sensible, c’est correct.
+
+Si `DATABASE_PASSWORD` est secret, ne jamais faire :
+
+```yaml
+- script: echo "$(DATABASE_PASSWORD)"
+```
+
+## Secrets et Docker
+
+Ne pas injecter un secret dans l’image au moment du build.
+
+Mauvais modèle :
+
+```dockerfile
+ENV DATABASE_PASSWORD=SuperSecret123
+```
+
+Bon modèle :
+
+```text
+l’image est générique
+le secret est injecté au runtime par l’environnement
+```
+
+```text
+Docker image
+   ↓
+App Service Application Settings / Key Vault
+   ↓
+conteneur démarré avec les secrets nécessaires
+```
+
+Une image Docker ne doit pas contenir de secret réel.
+
+
+
+---
+
+
+# Chapitre 11 — Azure Artifacts vs Azure Container Registry
+
+Azure Artifacts et Azure Container Registry sont deux services de stockage, mais ils ne stockent pas le même type de choses.
+
+## Azure Container Registry
+
+Azure Container Registry stocke des images Docker.
+
+Exemples :
+
+```text
+croissant-api:128
+frontend-web:20260605.1
+worker-import:1.4.0
+```
+
+Utilisation :
+
+```text
+docker build
+   ↓
+docker push
+   ↓
+ACR
+   ↓
+Azure App Service / Container Apps / AKS
+```
+
+ACR est le bon choix pour les conteneurs.
+
+## Azure Artifacts
+
+Azure Artifacts stocke des packages applicatifs.
+
+Exemples :
+
+```text
+npm
+NuGet
+Maven
+Python
+Cargo
+Universal Packages
+```
+
+Utilisation :
+
+```text
+librairie interne
+CLI interne
+SDK partagé
+composant commun
+```
+
+Exemple npm :
+
+```text
+@company/croissant-cli
+@company/ui-components
+```
+
+Exemple NuGet :
+
+```text
+Company.Croissant.Security
+Company.Croissant.Logging
+```
+
+## Différence simple
+
+| Besoin | Service |
+|---|---|
+| stocker une image Docker | Azure Container Registry |
+| stocker une librairie npm privée | Azure Artifacts |
+| stocker un package NuGet privé | Azure Artifacts |
+| déployer une image sur App Service | Azure Container Registry |
+| partager une CLI interne | Azure Artifacts |
+| centraliser des dépendances publiques npm/NuGet | Azure Artifacts avec upstream sources |
+
+## Packages publics et upstream sources
+
+Azure Artifacts peut aussi servir d’intermédiaire vers des registres publics.
+
+Exemple Angular :
+
+```text
+Projet Angular
+   ↓
+Azure Artifacts feed
+   ↓
+npmjs.com
+```
+
+Avec des upstream sources, un feed Azure Artifacts peut récupérer des packages publics et les conserver dans le feed.
+
+Intérêts :
+
+```text
+centraliser les dépendances
+contrôler les sources autorisées
+mettre en cache certains packages
+réduire la dépendance directe aux registres publics
+avoir un point de configuration unique pour l’équipe
+```
+
+## Exemple avec une CLI interne
+
+Une équipe crée une CLI :
+
+```text
+croissant-cli
+```
+
+Si cette CLI est distribuée comme package npm :
+
+```bash
+npm install -g @company/croissant-cli
+```
+
+Azure Artifacts est adapté.
+
+Si cette CLI est distribuée comme image Docker :
+
+```bash
+docker run company/croissant-cli:1.0.0
+```
+
+Un registry d’images est adapté.
+
+## Dans le fil rouge Docker-first
+
+Pour Croissant API :
+
+```text
+l’artefact de livraison = image Docker
+le stockage = Azure Container Registry
+```
+
+Azure Artifacts peut être présenté comme un service complémentaire pour les packages, mais il n’est pas le registry principal de l’image Docker.
+
+
+
+---
+
+
+# Chapitre 12 — Approbations, checks et production
+
+Un pipeline peut déployer automatiquement en dev. Pour la production, on ajoute souvent un contrôle humain ou automatique.
+
+```text
+dev : automatique
+staging : automatique ou semi-automatique
+production : protégée
+```
+
+Azure DevOps permet de protéger un environnement avec des approvals et checks.
 
 ## Environments dans Azure DevOps
 
-Les **Environments** d’Azure DevOps représentent des cibles de déploiement.
+Un environnement Azure DevOps sert à tracer et contrôler les déploiements.
 
 Exemples :
 
@@ -323,2008 +2034,701 @@ croissant-staging
 croissant-production
 ```
 
-Ils permettent de garder un historique des déploiements et d’ajouter des protections.
+Dans le YAML :
 
-Pour la production, on peut demander :
+```yaml
+- deployment: DeployProduction
+  environment: croissant-production
+```
+
+Cet environnement peut avoir des règles.
+
+## Approbation manuelle
+
+Une approbation manuelle bloque le pipeline jusqu’à validation.
+
+```text
+Deploy_Production démarre
+   ↓
+Azure DevOps demande une approbation
+   ↓
+un approver valide
+   ↓
+le déploiement continue
+```
+
+Cela crée une trace :
+
+```text
+qui a approuvé
+quand
+pour quel run
+vers quel environnement
+```
+
+## Branch control
+
+Un check de branche peut interdire la production depuis une branche autre que `main`.
+
+```text
+main → autorisé
+feature/test → bloqué
+```
+
+Ce check évite les déploiements accidentels.
+
+## Exclusive lock
+
+Un exclusive lock évite deux déploiements simultanés sur le même environnement.
+
+```text
+pipeline A déploie staging
+pipeline B attend
+```
+
+C’est utile pour éviter les collisions.
+
+## Deployment job complet
+
+```yaml
+- stage: Deploy_Production
+  dependsOn: Deploy_Staging
+  jobs:
+    - deployment: DeployProduction
+      environment: croissant-production
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - task: AzureWebAppContainer@1
+                inputs:
+                  azureSubscription: sc-azure-croissant
+                  appName: croissant-api-prod
+                  containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+```
+
+Le YAML demande le déploiement.
+
+L’environnement décide si le déploiement doit attendre une approbation.
+
+## Approvals dans le portail
+
+Configuration typique :
+
+```text
+Azure DevOps
+   ↓
+Pipelines
+   ↓
+Environments
+   ↓
+croissant-production
+   ↓
+Approvals and checks
+```
+
+Checks possibles :
 
 ```text
 approbation manuelle
-contrôle de branche
-verrouillage pour éviter deux déploiements simultanés
-vérification d’alertes de monitoring
+branch control
+business hours
+exclusive lock
+requête REST externe
+Azure Monitor alerts
 ```
 
-## Le chemin complet dans Azure DevOps
+## Production ne veut pas dire tout automatique
 
-Le parcours de Croissant API peut être résumé ainsi :
+Continuous Deployment signifie que tout peut aller automatiquement jusqu’en production.
+
+Continuous Delivery signifie qu’une version est prête, mais une validation peut rester nécessaire.
+
+Dans beaucoup d’équipes :
 
 ```text
-Work Item dans Boards
-  ↓
-branche Git dans Repos
-  ↓
-pull request
-  ↓
-pipeline CI dans Pipelines
-  ↓
-artefact publié
-  ↓
-pipeline CD
-  ↓
-environnement Azure DevOps
-  ↓
-application déployée sur Azure
+CI automatique
+CD dev automatique
+CD staging automatique
+CD production avec approbation
 ```
 
-Cette chaîne donne de la traçabilité : une version déployée peut être reliée au code, aux tests et aux demandes métier d’origine.
-# 3. Git, branches et pull requests
+Ce modèle est déjà très professionnel.
 
-Le pipeline CI/CD commence avec un repository Git propre.
 
-Pour Croissant API, le code est stocké dans un repository Azure Repos. Les développeurs ne travaillent pas directement sur la branche principale. Ils créent des branches courtes, proposent leurs changements via pull request, puis la CI vérifie automatiquement le résultat.
 
-## Branche principale
+---
 
-La branche principale s’appelle généralement `main`.
 
-Elle représente la version stable du code.
+# Chapitre 13 — Deployment slots, Blue/Green et rollback
+
+Déployer directement en production est risqué.
 
 ```text
-main
+nouvelle image
+   ↓
+production directe
+   ↓
+si problème, les utilisateurs sont impactés
 ```
 
-Une règle saine consiste à protéger cette branche :
+Les deployment slots permettent de déployer à côté de la production.
 
 ```text
-pas de push direct sur main
-passage obligatoire par pull request
-build obligatoire avant merge
-revue de code obligatoire
+App Service
+   ├── slot production
+   └── slot staging
 ```
 
-## Branches de travail
+## Déploiement vers staging
 
-Une branche de travail permet de développer sans casser `main`.
-
-Exemples de noms :
+Le pipeline déploie d’abord la nouvelle image sur le slot staging.
 
 ```text
-feature/add-health-endpoint
-feature/123-add-croissant-list
-bugfix/fix-health-route
-hotfix/fix-production-crash
+production : ancienne version
+staging    : nouvelle version
 ```
 
-Une branche doit rester courte. Plus une branche vit longtemps, plus elle risque de diverger de `main`.
+On teste ensuite staging.
 
-## Commit
+```bash
+curl --fail https://croissant-api-prod-staging.azurewebsites.net/health
+```
 
-Un commit représente une modification enregistrée dans l’historique Git.
+Si tout est correct, on fait un swap.
 
-Un bon message de commit explique ce qui change.
+## Swap
+
+Le swap échange staging et production.
+
+Avant :
+
+```text
+production : v1
+staging    : v2
+```
+
+Après :
+
+```text
+production : v2
+staging    : v1
+```
+
+Ce modèle se rapproche d’un déploiement Blue/Green.
+
+```text
+Blue  = version actuelle
+Green = nouvelle version
+```
+
+On prépare Green, on teste Green, puis on bascule le trafic.
+
+## Déployer vers un slot avec AzureWebAppContainer@1
+
+```yaml
+- task: AzureWebAppContainer@1
+  displayName: "Déployer sur staging"
+  inputs:
+    azureSubscription: sc-azure-croissant
+    appName: croissant-api-prod
+    deployToSlotOrASE: true
+    resourceGroupName: rg-croissant-demo
+    slotName: staging
+    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+```
+
+## Swap avec AzureAppServiceManage@0
+
+```yaml
+- task: AzureAppServiceManage@0
+  displayName: "Swap staging vers production"
+  inputs:
+    azureSubscription: sc-azure-croissant
+    Action: "Swap Slots"
+    WebAppName: croissant-api-prod
+    ResourceGroupName: rg-croissant-demo
+    SourceSlot: staging
+    SwapWithProduction: true
+```
+
+## Rollback
+
+Le rollback consiste à revenir rapidement à la version précédente.
+
+Avec les slots, après un swap réussi :
+
+```text
+production : v2
+staging    : v1
+```
+
+Si v2 pose problème, on peut refaire le swap inverse.
+
+```text
+production : v1
+staging    : v2
+```
+
+C’est beaucoup plus simple que de reconstruire une ancienne version dans l’urgence.
+
+## Slot settings
+
+Certaines configurations doivent rester attachées au slot.
 
 Exemples :
 
 ```text
-feat: add health endpoint
-fix: return 200 on health check
-test: add health endpoint test
-ci: add node pipeline
+ENVIRONMENT_NAME
+connection string staging
+URL de service de test
 ```
 
-Les messages structurés facilitent la génération de notes de version et la compréhension de l’historique.
+Dans Azure App Service, on peut marquer certains settings comme slot-specific.
 
-## Pull request
+Cela évite que la configuration staging parte en production lors du swap.
 
-Une pull request est une demande d’intégration d’une branche dans une autre.
-
-Dans Azure Repos, une PR permet de :
+## Pipeline staging puis production
 
 ```text
-relire le code
-commenter les changements
-lier un work item
-exécuter un pipeline de validation
-bloquer le merge si la CI échoue
-conserver une trace de validation
+Build image
+   ↓
+Push ACR
+   ↓
+Deploy slot staging
+   ↓
+Smoke test staging
+   ↓
+Approval production
+   ↓
+Swap staging → production
 ```
 
-Flux classique :
+Ce modèle réduit fortement le risque.
+
+La nouvelle image est testée dans un environnement réel avant d’être exposée aux utilisateurs.
+
+
+
+---
+
+
+# Chapitre 14 — Infrastructure as Code, Configuration as Code, Pipeline as Code
+
+Les termes se ressemblent, mais ils ne désignent pas la même chose.
 
 ```text
-créer une branche
-  ↓
-modifier le code
-  ↓
-pousser la branche
-  ↓
-ouvrir une pull request
-  ↓
-CI automatique
-  ↓
-review
-  ↓
-merge vers main
+Pipeline as Code
+Configuration as Code
+Infrastructure as Code
 ```
 
-## Policies de branche
+Ils ont un point commun : écrire dans des fichiers ce qui était souvent fait à la main dans une interface.
 
-Les branch policies sont des règles appliquées à une branche.
+## Pipeline as Code
 
-Pour `main`, on peut imposer :
+Pipeline as Code signifie que le pipeline est décrit dans un fichier.
 
-```text
-nombre minimum de reviewers
-build obligatoire réussi
-work item lié
-commentaires résolus
-interdiction du push direct
-```
-
-Ces règles transforment une bonne pratique en contrainte technique.
-
-Sans policies, l’équipe dépend uniquement de la discipline humaine.
-
-Avec policies, Azure DevOps empêche automatiquement les actions dangereuses.
-
-## Exemple avec Croissant API
-
-Un développeur doit ajouter une route `/health`.
-
-```text
-main
-  ↓
-feature/add-health-endpoint
-  ↓
-commit : feat: add health endpoint
-  ↓
-pull request vers main
-  ↓
-CI : npm install + npm test
-  ↓
-review
-  ↓
-merge
-```
-
-La CI devient un garde-fou. Si le test échoue, la pull request ne doit pas être mergée.
-# 4. Premier pipeline YAML
-
-Un pipeline Azure DevOps peut être défini dans un fichier YAML.
-
-Le YAML décrit les étapes que l’agent Azure DevOps doit exécuter.
-
-Pour Croissant API, le premier pipeline se contente de récupérer le code et d’afficher un message.
-
-## Structure minimale
-
-```yaml
-trigger:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
-
-steps:
-  - script: echo "Premier pipeline Croissant API"
-    displayName: "Afficher un message"
-```
-
-Ce fichier peut être nommé :
+Exemple :
 
 ```text
 azure-pipelines.yml
 ```
 
-## Trigger
+Il décrit :
 
-Le bloc `trigger` indique quand le pipeline démarre.
-
-```yaml
-trigger:
-  - main
+```text
+triggers
+stages
+jobs
+steps
+tests
+build Docker
+push ACR
+deploy App Service
 ```
 
-Ici, le pipeline démarre lorsqu’un changement arrive sur `main`.
+Le pipeline est versionné avec le code.
 
-On peut aussi déclencher sur plusieurs branches :
+```text
+modification du pipeline
+   ↓
+pull request
+   ↓
+review
+   ↓
+historique Git
+```
+
+## Configuration as Code
+
+Configuration as Code signifie que la configuration non sensible est décrite dans des fichiers ou dans des objets gérés.
+
+Exemples :
+
+```text
+docker-compose.yml
+variables YAML
+Variable Groups
+fichiers de templates
+valeurs d’environnement documentées
+```
+
+Exemple :
+
+```yaml
+variables:
+  imageRepository: croissant-api
+  acrLoginServer: croissantregistrydemo.azurecr.io
+```
+
+Ou :
+
+```yaml
+services:
+  api:
+    environment:
+      ENVIRONMENT_NAME: local
+      LOG_LEVEL: debug
+```
+
+Configuration as Code ne veut pas dire committer les secrets.
+
+```text
+config non sensible : oui
+secret réel : non
+```
+
+## Infrastructure as Code
+
+Infrastructure as Code signifie que les ressources cloud sont décrites dans des fichiers.
+
+Exemples de ressources :
+
+```text
+Resource Group
+Azure Container Registry
+App Service Plan
+App Service
+Deployment Slot
+Key Vault
+Application Insights
+```
+
+Outils possibles :
+
+```text
+Bicep
+Terraform
+ARM templates
+Pulumi
+```
+
+Avec Bicep, on décrit l’état souhaité des ressources Azure.
+
+Exemple simplifié :
+
+```bicep
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+  name: 'plan-croissant-demo'
+  location: resourceGroup().location
+  sku: {
+    name: 'B1'
+  }
+  kind: 'linux'
+  properties: {
+    reserved: true
+  }
+}
+```
+
+Le principe :
+
+```text
+au lieu de cliquer dans Azure Portal
+on écrit l’infrastructure dans un fichier
+```
+
+## Comparaison
+
+| Terme | Décrit quoi ? | Exemple |
+|---|---|---|
+| Pipeline as Code | la chaîne CI/CD | `azure-pipelines.yml` |
+| Configuration as Code | les paramètres et valeurs non sensibles | `docker-compose.yml`, variables YAML |
+| Infrastructure as Code | les ressources cloud | `main.bicep`, `main.tf` |
+
+## Dans le fil rouge Croissant API
+
+```text
+Infrastructure as Code
+   crée ACR, App Service, slots
+
+Configuration as Code
+   définit ENVIRONMENT_NAME, LOG_LEVEL, ports
+
+Pipeline as Code
+   automatise tests, docker build, docker push, déploiement
+```
+
+Les trois couches se complètent.
+
+```text
+Infrastructure = où l’application peut tourner
+Configuration = comment elle se comporte
+Pipeline = comment elle arrive jusque-là
+```
+
+
+
+---
+
+
+# Chapitre 15 — Pipeline complet end-to-end
+
+Le pipeline complet Docker-first suit tout le trajet.
+
+```text
+GitHub
+   ↓
+Tests
+   ↓
+Build image Docker
+   ↓
+Push vers Azure Container Registry
+   ↓
+Deploy vers dev
+   ↓
+Deploy vers staging slot
+   ↓
+Smoke test staging
+   ↓
+Approval production
+   ↓
+Swap staging vers production
+```
+
+## Version complète
 
 ```yaml
 trigger:
   branches:
     include:
       - main
-      - release/*
-```
-
-## Pool et agent
-
-Le bloc `pool` indique sur quelle machine le pipeline sera exécuté.
-
-```yaml
-pool:
-  vmImage: ubuntu-latest
-```
-
-Ici, Azure DevOps fournit une machine Linux temporaire.
-
-Un agent est donc la machine qui exécute les commandes du pipeline.
-
-Types fréquents :
-
-| Type d’agent | Usage |
-|---|---|
-| Microsoft-hosted | agent fourni automatiquement par Microsoft |
-| Self-hosted | agent installé et maintenu par l’équipe |
-
-Pour démarrer, un agent Microsoft-hosted suffit.
-
-## Steps
-
-Les `steps` sont les actions concrètes du pipeline.
-
-```yaml
-steps:
-  - script: echo "Hello"
-    displayName: "Dire bonjour"
-```
-
-Un step peut être :
-
-```text
-une commande shell
-une commande PowerShell
-une tâche Azure DevOps prête à l’emploi
-un template réutilisable
-```
-
-## Stages, jobs et steps
-
-Un pipeline plus structuré utilise trois niveaux :
-
-```text
-stage
-  └── job
-        └── step
-```
-
-| Niveau | Rôle |
-|---|---|
-| stage | grande phase du pipeline |
-| job | unité de travail exécutée sur un agent |
-| step | action précise |
-
-Exemple :
-
-```yaml
-trigger:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
-
-stages:
-  - stage: Build
-    displayName: "Build"
-    jobs:
-      - job: BuildJob
-        displayName: "Construire l’application"
-        steps:
-          - script: echo "Build en cours"
-            displayName: "Afficher le build"
-```
-
-## Pourquoi YAML plutôt que Classic
-
-Un pipeline YAML est versionné avec le code.
-
-Cela apporte plusieurs avantages :
-
-```text
-historique Git
-review en pull request
-reproductibilité
-partage entre projets
-rollback possible
-```
-
-Une modification de pipeline devient une modification de code comme les autres.
-
-## Premier pipeline utile
-
-Pour une application Node.js, un premier pipeline utile peut installer les dépendances et lancer les tests :
-
-```yaml
-trigger:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
-
-steps:
-  - task: NodeTool@0
-    displayName: "Installer Node.js"
-    inputs:
-      versionSpec: "20.x"
-
-  - script: npm ci
-    displayName: "Installer les dépendances"
-
-  - script: npm test
-    displayName: "Lancer les tests"
-```
-
-Ce pipeline est une première CI.
-# 5. Intégration continue
-
-L’intégration continue vérifie automatiquement que le code peut être intégré dans la branche principale.
-
-Pour Croissant API, la CI doit répondre à cette question :
-
-> Est-ce que l’application s’installe correctement et est-ce que les tests passent ?
-
-## Étapes d’une CI
-
-Une CI standard suit ce chemin :
-
-```text
-checkout du code
-  ↓
-installation du runtime
-  ↓
-installation des dépendances
-  ↓
-lint ou analyse de qualité
-  ↓
-tests
-  ↓
-build
-  ↓
-publication des résultats
-```
-
-Toutes les étapes ne sont pas toujours présentes dès le début. Le pipeline peut évoluer avec le projet.
-
-## Checkout
-
-Azure Pipelines récupère automatiquement le repository, mais on peut l’indiquer explicitement :
-
-```yaml
-- checkout: self
-```
-
-`self` signifie : le repository qui contient le pipeline.
-
-## Installation du runtime
-
-Pour Node.js :
-
-```yaml
-- task: NodeTool@0
-  displayName: "Installer Node.js"
-  inputs:
-    versionSpec: "20.x"
-```
-
-Pour .NET, on utiliserait une autre tâche, par exemple `UseDotNet@2`.
-
-## Installation des dépendances
-
-Pour un projet Node.js :
-
-```yaml
-- script: npm ci
-  displayName: "Installer les dépendances"
-```
-
-`npm ci` est préférable à `npm install` dans un pipeline, car il installe exactement les versions prévues dans le fichier `package-lock.json`.
-
-## Tests
-
-Les tests automatisés sont le cœur de la CI.
-
-```yaml
-- script: npm test
-  displayName: "Lancer les tests"
-```
-
-Un test échoué doit faire échouer le pipeline.
-
-Si le pipeline échoue, la pull request ne devrait pas être mergée.
-
-## Build
-
-Selon la technologie, le build peut prendre plusieurs formes.
-
-Exemples :
-
-```text
-npm run build
-dotnet build
-mvn package
-python -m build
-docker build
-```
-
-Pour Croissant API, l’application est volontairement simple. Le build peut être remplacé par une étape de préparation du package.
-
-## Validation de pull request
-
-La CI peut s’exécuter sur les pull requests.
-
-```yaml
-trigger:
-  - main
 
 pr:
-  - main
-```
-
-Avec cette configuration, le pipeline s’exécute :
-
-```text
-quand main change
-quand une pull request cible main
-```
-
-La validation PR évite d’intégrer du code cassé.
-
-## Pipeline CI complet
-
-```yaml
-trigger:
-  - main
-
-pr:
-  - main
+  branches:
+    include:
+      - main
 
 pool:
   vmImage: ubuntu-latest
 
-stages:
-  - stage: CI
-    displayName: "Intégration continue"
-    jobs:
-      - job: BuildAndTest
-        displayName: "Build et tests"
-        steps:
-          - checkout: self
-
-          - task: NodeTool@0
-            displayName: "Installer Node.js"
-            inputs:
-              versionSpec: "20.x"
-
-          - script: npm ci
-            displayName: "Installer les dépendances"
-
-          - script: npm test
-            displayName: "Lancer les tests"
-
-          - script: npm run build --if-present
-            displayName: "Build applicatif"
-```
-
-## Ce que garantit la CI
-
-La CI ne prouve pas que l’application est parfaite.
-
-Elle garantit plutôt :
-
-```text
-le projet s’installe
-les tests connus passent
-le build ne casse pas
-le feedback est rapide
-le code est vérifié de manière répétable
-```
-
-La CI est donc une première barrière de qualité.
-# 6. Artefacts de build
-
-Un artefact est ce que le pipeline produit pour être réutilisé ensuite.
-
-Dans une chaîne CI/CD, le pipeline de CI ne doit pas seulement dire “les tests sont verts”. Il doit aussi produire une version exploitable de l’application.
-
-## Pourquoi publier un artefact
-
-Sans artefact, le CD risque de reconstruire l’application au moment du déploiement.
-
-Cela pose un problème :
-
-```text
-ce qui est testé n’est pas forcément ce qui est déployé
-```
-
-Avec un artefact :
-
-```text
-CI construit une version
-CI teste cette version
-CD déploie cette même version
-```
-
-C’est le principe :
-
-```text
-Build once, deploy everywhere
-```
-
-## Artefact pour Croissant API
-
-Pour Croissant API, on peut créer un fichier zip contenant :
-
-```text
-package.json
-package-lock.json
-src/
-test/
-```
-
-Dans un vrai projet, on adapterait le contenu selon la technologie.
-
-## Préparer le contenu
-
-On peut copier les fichiers nécessaires dans un dossier temporaire :
-
-```yaml
-- script: |
-    mkdir -p $(Build.ArtifactStagingDirectory)/app
-    cp package*.json $(Build.ArtifactStagingDirectory)/app/
-    cp -r src $(Build.ArtifactStagingDirectory)/app/src
-  displayName: "Préparer l’artefact"
-```
-
-`$(Build.ArtifactStagingDirectory)` est une variable intégrée d’Azure Pipelines. Elle pointe vers un dossier prévu pour préparer les fichiers à publier.
-
-## Publier l’artefact
-
-Azure Pipelines fournit une tâche dédiée :
-
-```yaml
-- task: PublishPipelineArtifact@1
-  displayName: "Publier l’artefact"
-  inputs:
-    targetPath: "$(Build.ArtifactStagingDirectory)/app"
-    artifact: "croissant-api"
-    publishLocation: "pipeline"
-```
-
-L’artefact devient disponible dans le run du pipeline.
-
-## Télécharger l’artefact dans un autre stage
-
-Un stage de déploiement peut télécharger l’artefact :
-
-```yaml
-- task: DownloadPipelineArtifact@2
-  displayName: "Télécharger l’artefact"
-  inputs:
-    artifact: "croissant-api"
-    path: "$(Pipeline.Workspace)/croissant-api"
-```
-
-Cela permet de séparer clairement :
-
-```text
-CI : construire et tester
-CD : déployer ce qui a été construit
-```
-
-## Pipeline avec artefact
-
-```yaml
-trigger:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
+variables:
+  imageRepository: croissant-api
+  imageTag: $(Build.BuildId)
+  acrLoginServer: croissantregistrydemo.azurecr.io
+  resourceGroupName: rg-croissant-demo
+  devAppName: croissant-api-dev
+  prodAppName: croissant-api-prod
+  stagingSlotName: staging
 
 stages:
-  - stage: Build
-    displayName: "Build"
+  - stage: Test
+    displayName: "Tests"
     jobs:
-      - job: BuildJob
-        displayName: "Construire et publier"
+      - job: TestNode
         steps:
           - checkout: self
-
-          - task: NodeTool@0
-            displayName: "Installer Node.js"
-            inputs:
-              versionSpec: "20.x"
-
-          - script: npm ci
-            displayName: "Installer les dépendances"
-
           - script: npm test
-            displayName: "Lancer les tests"
+            displayName: "Tests Node.js"
 
+  - stage: Build_Image
+    displayName: "Build image Docker"
+    dependsOn: Test
+    jobs:
+      - job: DockerBuild
+        steps:
+          - checkout: self
+          - script: docker build -t $(imageRepository):$(imageTag) .
+            displayName: "Docker build"
           - script: |
-              mkdir -p $(Build.ArtifactStagingDirectory)/app
-              cp package*.json $(Build.ArtifactStagingDirectory)/app/
-              cp -r src $(Build.ArtifactStagingDirectory)/app/src
-            displayName: "Préparer l’artefact"
+              docker run -d --name croissant-api-test -p 8080:8080 $(imageRepository):$(imageTag)
+              sleep 5
+              curl --fail http://localhost:8080/health
+              docker rm -f croissant-api-test
+            displayName: "Smoke test local du conteneur"
 
-          - task: PublishPipelineArtifact@1
-            displayName: "Publier l’artefact"
-            inputs:
-              targetPath: "$(Build.ArtifactStagingDirectory)/app"
-              artifact: "croissant-api"
-              publishLocation: "pipeline"
-```
-
-## Versionner un artefact
-
-Azure Pipelines expose des variables utiles :
-
-| Variable | Utilisation |
-|---|---|
-| `$(Build.BuildId)` | identifiant unique du run |
-| `$(Build.SourceBranchName)` | branche source |
-| `$(Build.Repository.Name)` | nom du repository |
-| `$(Build.ArtifactStagingDirectory)` | dossier de préparation |
-
-On peut les utiliser pour nommer ou tracer les livraisons.
-
-Exemple :
-
-```text
-croissant-api-$(Build.BuildId)
-```
-
-L’identifiant du build permet de retrouver exactement quel pipeline a produit quelle version.
-# 7. Déploiement continu et environnements
-
-Une fois l’artefact produit, le pipeline peut le déployer.
-
-Le CD commence là où la CI s’arrête.
-
-```text
-CI : produire une version fiable
-CD : envoyer cette version dans un environnement
-```
-
-## Chaîne de promotion
-
-Une application n’est généralement pas envoyée directement en production.
-
-Elle passe par une chaîne de promotion :
-
-```text
-Dev → Staging → Production
-```
-
-Chaque étape ajoute une validation.
-
-| Environnement | Déploiement | Validation |
-|---|---|---|
-| Dev | automatique | vérification rapide |
-| Staging | automatique ou semi-automatique | tests fonctionnels |
-| Production | protégé | approbation et monitoring |
-
-## Stage de déploiement
-
-Un stage de déploiement peut télécharger l’artefact et l’envoyer vers une cible.
-
-Exemple simplifié :
-
-```yaml
-- stage: Deploy_Dev
-  displayName: "Déploiement Dev"
-  dependsOn: Build
-  jobs:
-    - job: DeployDev
-      displayName: "Déployer en Dev"
-      steps:
-        - task: DownloadPipelineArtifact@2
-          inputs:
-            artifact: "croissant-api"
-            path: "$(Pipeline.Workspace)/croissant-api"
-
-        - script: echo "Déploiement en Dev"
-```
-
-`dependsOn` indique que le déploiement dépend du stage précédent.
-
-## Jobs de déploiement
-
-Azure Pipelines propose un type de job spécial : `deployment`.
-
-Il permet de cibler un environnement Azure DevOps.
-
-```yaml
-- stage: Deploy_Staging
-  displayName: "Déploiement Staging"
-  dependsOn: Build
-  jobs:
-    - deployment: DeployStaging
-      displayName: "Déployer en Staging"
-      environment: "croissant-staging"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - script: echo "Déploiement dans l’environnement staging"
-```
-
-L’intérêt de `environment` est de lier le pipeline à un environnement Azure DevOps.
-
-Cela permet :
-
-```text
-historique des déploiements
-approbations
-checks
-traçabilité
-protection de la production
-```
-
-## Enchaîner les environnements
-
-```yaml
-stages:
-  - stage: Build
+  - stage: Push_ACR
+    displayName: "Push vers Azure Container Registry"
+    dependsOn: Build_Image
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
-      - job: BuildJob
+      - job: DockerPush
         steps:
-          - script: echo "Build"
+          - checkout: self
+          - task: Docker@2
+            displayName: "Build and push ACR"
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: Dockerfile
+              containerRegistry: sc-acr-croissant
+              tags: |
+                $(imageTag)
 
   - stage: Deploy_Dev
-    dependsOn: Build
+    displayName: "Déploiement dev"
+    dependsOn: Push_ACR
     jobs:
       - deployment: DeployDev
-        environment: "croissant-dev"
+        environment: croissant-dev
         strategy:
           runOnce:
             deploy:
               steps:
-                - script: echo "Deploy Dev"
+                - task: AzureWebAppContainer@1
+                  displayName: "Déployer dev"
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    appName: $(devAppName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+
+                - script: curl --fail https://$(devAppName).azurewebsites.net/health
+                  displayName: "Smoke test dev"
 
   - stage: Deploy_Staging
+    displayName: "Déploiement staging slot"
     dependsOn: Deploy_Dev
     jobs:
       - deployment: DeployStaging
-        environment: "croissant-staging"
+        environment: croissant-staging
         strategy:
           runOnce:
             deploy:
               steps:
-                - script: echo "Deploy Staging"
-```
-
-Ici, staging attend que dev soit terminé.
-
-## Smoke test
-
-Après un déploiement, on exécute souvent un test très simple appelé **smoke test**.
-
-Il vérifie que l’application répond.
-
-Exemple :
-
-```bash
-curl https://croissant-api-staging.azurewebsites.net/health
-```
-
-Dans un pipeline :
-
-```yaml
-- script: |
-    curl --fail https://$(APP_HOSTNAME)/health
-  displayName: "Smoke test"
-```
-
-Si le smoke test échoue, le pipeline s’arrête.
-
-## Déploiement direct ou promotion
-
-Deux approches existent.
-
-Approche moins fiable :
-
-```text
-build dev
-build staging
-build production
-```
-
-Approche plus fiable :
-
-```text
-build unique
-  ↓
-artefact unique
-  ↓
-déploiement dev
-  ↓
-déploiement staging
-  ↓
-déploiement production
-```
-
-Le CD doit favoriser la promotion de la même version.
-# 8. Déploiement Azure App Service
-
-Azure App Service permet d’héberger une application web sans gérer directement les serveurs.
-
-Pour Croissant API, Azure App Service sert de cible de déploiement.
-
-Le pipeline Azure DevOps construit l’application, produit un artefact, puis déploie cet artefact sur App Service.
-
-## Ressources Azure utilisées
-
-Un déploiement App Service repose généralement sur ces ressources :
-
-| Ressource | Rôle |
-|---|---|
-| Resource Group | conteneur logique des ressources |
-| App Service Plan | capacité d’hébergement |
-| App Service | application web |
-| Application Settings | configuration de l’application |
-
-Exemple :
-
-```text
-Resource Group     : rg-croissant-demo
-App Service Plan   : asp-croissant-demo
-App Service Dev    : app-croissant-dev
-App Service Staging: app-croissant-staging
-App Service Prod   : app-croissant-prod
-```
-
-## Service Connection
-
-Azure DevOps doit avoir le droit de déployer dans Azure.
-
-Pour cela, on utilise une **Service Connection**.
-
-Elle représente une connexion sécurisée entre Azure DevOps et Azure.
-
-Dans un pipeline, elle est référencée par son nom :
-
-```yaml
-azureSubscription: "sc-azure-croissant"
-```
-
-La Service Connection doit avoir uniquement les droits nécessaires.
-
-## Déployer avec AzureWebApp
-
-Azure Pipelines fournit la tâche `AzureWebApp@1`.
-
-Exemple :
-
-```yaml
-- task: AzureWebApp@1
-  displayName: "Déployer sur Azure App Service"
-  inputs:
-    azureSubscription: "sc-azure-croissant"
-    appType: "webAppLinux"
-    appName: "app-croissant-dev"
-    package: "$(Pipeline.Workspace)/croissant-api"
-```
-
-Les champs importants :
-
-| Champ | Sens |
-|---|---|
-| `azureSubscription` | nom de la Service Connection |
-| `appType` | type d’App Service |
-| `appName` | nom de l’application Azure |
-| `package` | chemin vers l’artefact à déployer |
-
-## Variables de déploiement
-
-On évite d’écrire les noms partout en dur.
-
-On peut utiliser des variables :
-
-```yaml
-variables:
-  azureServiceConnection: "sc-azure-croissant"
-  devAppName: "app-croissant-dev"
-```
-
-Puis :
-
-```yaml
-- task: AzureWebApp@1
-  inputs:
-    azureSubscription: "$(azureServiceConnection)"
-    appType: "webAppLinux"
-    appName: "$(devAppName)"
-    package: "$(Pipeline.Workspace)/croissant-api"
-```
-
-## Pipeline CI + déploiement Dev
-
-```yaml
-trigger:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
-
-variables:
-  azureServiceConnection: "sc-azure-croissant"
-  devAppName: "app-croissant-dev"
-
-stages:
-  - stage: Build
-    displayName: "Build"
-    jobs:
-      - job: BuildJob
-        steps:
-          - checkout: self
-
-          - task: NodeTool@0
-            inputs:
-              versionSpec: "20.x"
-
-          - script: npm ci
-            displayName: "Installer les dépendances"
-
-          - script: npm test
-            displayName: "Lancer les tests"
-
-          - script: |
-              mkdir -p $(Build.ArtifactStagingDirectory)/app
-              cp package*.json $(Build.ArtifactStagingDirectory)/app/
-              cp -r src $(Build.ArtifactStagingDirectory)/app/src
-            displayName: "Préparer l’artefact"
-
-          - task: PublishPipelineArtifact@1
-            inputs:
-              targetPath: "$(Build.ArtifactStagingDirectory)/app"
-              artifact: "croissant-api"
-              publishLocation: "pipeline"
-
-  - stage: Deploy_Dev
-    displayName: "Déploiement Dev"
-    dependsOn: Build
-    jobs:
-      - deployment: DeployDev
-        environment: "croissant-dev"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - task: DownloadPipelineArtifact@2
+                - task: AzureWebAppContainer@1
+                  displayName: "Déployer sur slot staging"
                   inputs:
-                    artifact: "croissant-api"
-                    path: "$(Pipeline.Workspace)/croissant-api"
-
-                - task: AzureWebApp@1
-                  displayName: "Déployer sur App Service Dev"
-                  inputs:
-                    azureSubscription: "$(azureServiceConnection)"
-                    appType: "webAppLinux"
-                    appName: "$(devAppName)"
-                    package: "$(Pipeline.Workspace)/croissant-api"
-```
-
-## Vérifier le déploiement
-
-Après le déploiement, on peut vérifier la route `/health`.
-
-```yaml
-- script: |
-    curl --fail https://$(devAppName).azurewebsites.net/health
-  displayName: "Vérifier /health"
-```
-
-Cette vérification simple évite de considérer un déploiement comme réussi si l’application ne répond pas.
-# 9. Variables, secrets et Key Vault
-
-Un pipeline a besoin de configuration.
-
-Certaines valeurs ne sont pas sensibles :
-
-```text
-nom d’une application
-nom d’un resource group
-nom d’un environnement
-URL publique
-```
-
-D’autres valeurs sont sensibles :
-
-```text
-mot de passe
-clé API
-token
-chaîne de connexion
-certificat
-```
-
-Il faut distinguer **variables** et **secrets**.
-
-## Variables non sensibles
-
-Une variable non sensible peut être écrite dans le YAML si elle ne pose pas de risque.
-
-```yaml
-variables:
-  appName: "app-croissant-dev"
-  environmentName: "dev"
-```
-
-Utilisation :
-
-```yaml
-- script: echo "Déploiement de $(appName)"
-```
-
-## Secrets
-
-Un secret ne doit jamais être écrit dans le code ni dans le YAML.
-
-Mauvais exemple :
-
-```yaml
-variables:
-  databasePassword: "SuperPassword123"
-```
-
-Bon principe :
-
-```text
-le YAML référence le secret
-le secret est stocké dans un espace sécurisé
-la valeur est masquée dans les logs
-```
-
-## Variable Groups
-
-Dans Azure DevOps, les Variable Groups se trouvent dans :
-
-```text
-Pipelines → Library → Variable groups
-```
-
-Un variable group permet de centraliser des variables utilisées par plusieurs pipelines.
-
-Exemple :
-
-```text
-croissant-dev-vars
-croissant-staging-vars
-croissant-prod-vars
-```
-
-On peut y stocker :
-
-```text
-APP_NAME
-APP_HOSTNAME
-RESOURCE_GROUP
-DATABASE_URL
-```
-
-Les variables sensibles doivent être marquées comme secrètes.
-
-## Utiliser un Variable Group dans YAML
-
-```yaml
-variables:
-  - group: croissant-dev-vars
-```
-
-Puis :
-
-```yaml
-- script: echo "Application : $(APP_NAME)"
-```
-
-## Variables par environnement
-
-Pour éviter de mélanger dev, staging et production, on peut utiliser des groupes séparés.
-
-```yaml
-variables:
-  - group: croissant-staging-vars
-```
-
-Puis le stage staging utilise les valeurs staging.
-
-La production peut utiliser un autre groupe :
-
-```yaml
-variables:
-  - group: croissant-prod-vars
-```
-
-## Azure Key Vault
-
-Azure Key Vault est le coffre-fort Azure pour les secrets.
-
-Il sert à stocker :
-
-```text
-secrets applicatifs
-certificats
-clés cryptographiques
-chaînes de connexion
-```
-
-Dans une approche plus propre, Azure DevOps ne stocke pas directement tous les secrets. Il les lit depuis Key Vault.
-
-## Lier un Variable Group à Key Vault
-
-Un variable group peut être lié à un Azure Key Vault.
-
-Le pipeline accède alors aux secrets sans les écrire dans le YAML.
-
-Exemple conceptuel :
-
-```yaml
-variables:
-  - group: croissant-keyvault-secrets
-```
-
-Puis :
-
-```yaml
-- script: echo "Le secret existe mais sa valeur ne doit pas être affichée"
-```
-
-## Règles importantes
-
-```text
-ne jamais committer un secret
-ne jamais afficher un secret avec echo
-ne jamais partager un token personnel
-utiliser des secrets différents par environnement
-limiter les droits des Service Connections
-supprimer et renouveler un secret exposé
-```
-
-## Exemple avec Croissant API
-
-L’application peut lire une variable d’environnement :
-
-```text
-ENVIRONMENT_NAME=staging
-```
-
-Elle peut aussi lire une chaîne de connexion :
-
-```text
-DATABASE_CONNECTION_STRING
-```
-
-La première valeur peut être une variable simple.
-La deuxième doit être un secret.
-
-## Configuration dans App Service
-
-Azure App Service possède des **Application Settings**.
-
-Ces settings deviennent des variables d’environnement pour l’application.
-
-Exemples :
-
-```text
-ENVIRONMENT_NAME=Production
-LOG_LEVEL=Warning
-DATABASE_CONNECTION_STRING=secret
-```
-
-Le pipeline peut déployer l’application, mais la configuration de l’environnement doit rester séparée du code.
-# 10. Approbations, checks et production
-
-La production est l’environnement le plus sensible.
-
-Un déploiement en production peut impacter de vrais utilisateurs, des données réelles et l’image de l’entreprise.
-
-Pour cette raison, le pipeline ne doit pas traiter la production comme un environnement ordinaire.
-
-## Protection de la production
-
-Un déploiement en production peut être protégé par :
-
-```text
-approbation manuelle
-contrôle de branche
-vérification d’alertes
-verrouillage exclusif
-restriction des permissions
-historique des déploiements
-```
-
-Azure DevOps permet de configurer ces protections sur les **Environments**.
-
-## Environnement production
-
-Dans Azure DevOps :
-
-```text
-Pipelines → Environments → New environment
-```
-
-Nom possible :
-
-```text
-croissant-production
-```
-
-Un stage de pipeline peut cibler cet environnement :
-
-```yaml
-- stage: Deploy_Production
-  displayName: "Déploiement Production"
-  jobs:
-    - deployment: DeployProduction
-      environment: "croissant-production"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - script: echo "Déploiement production"
-```
-
-## Approbation manuelle
-
-Une approbation manuelle bloque le pipeline jusqu’à ce qu’une personne autorisée valide.
-
-Flux :
-
-```text
-staging réussi
-  ↓
-pipeline demande validation production
-  ↓
-approbateur vérifie
-  ↓
-approbation
-  ↓
-déploiement production
-```
-
-L’approbation ajoute une trace :
-
-```text
-qui a approuvé
-quand
-pour quel déploiement
-```
-
-## Branch control
-
-La production ne devrait pas accepter un déploiement depuis n’importe quelle branche.
-
-Règle classique :
-
-```text
-seule main peut aller en production
-```
-
-Cela évite qu’une branche de fonctionnalité soit déployée accidentellement.
-
-## Exclusive lock
-
-Un verrou exclusif empêche deux déploiements simultanés sur le même environnement.
-
-Sans verrou :
-
-```text
-pipeline A déploie
-pipeline B déploie en même temps
-résultat incertain
-```
-
-Avec verrou :
-
-```text
-pipeline A déploie
-pipeline B attend
-```
-
-## Production dans le YAML
-
-Exemple :
-
-```yaml
-- stage: Deploy_Production
-  displayName: "Déploiement Production"
-  dependsOn: Deploy_Staging
-  jobs:
-    - deployment: DeployProduction
-      displayName: "Déployer en Production"
-      environment: "croissant-production"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - task: DownloadPipelineArtifact@2
-                inputs:
-                  artifact: "croissant-api"
-                  path: "$(Pipeline.Workspace)/croissant-api"
-
-              - task: AzureWebApp@1
-                displayName: "Déployer sur App Service Production"
-                inputs:
-                  azureSubscription: "$(azureServiceConnection)"
-                  appType: "webAppLinux"
-                  appName: "$(prodAppName)"
-                  package: "$(Pipeline.Workspace)/croissant-api"
-```
-
-La protection n’est pas seulement dans le YAML. Elle se configure aussi sur l’environnement Azure DevOps.
-
-## Vérification après production
-
-Après le déploiement, il faut vérifier que l’application répond.
-
-```yaml
-- script: |
-    curl --fail https://$(prodAppName).azurewebsites.net/health
-  displayName: "Smoke test production"
-```
-
-Un smoke test ne remplace pas tous les tests fonctionnels. Il vérifie seulement que la version déployée est vivante.
-
-## Responsabilité du passage en production
-
-Un bon pipeline rend le déploiement reproductible.
-
-Mais la décision de production peut rester humaine.
-
-Avant d’approuver, on peut vérifier :
-
-```text
-la CI est verte
-l’artefact est identifié
-staging est validé
-les tests importants sont passés
-aucune alerte critique n’est active
-un rollback est possible
-```
-
-La production n’est pas un simple bouton. C’est une étape contrôlée.
-# 11. Deployment slots, Blue/Green et rollback
-
-Déployer directement sur la production peut être risqué.
-
-Avec Azure App Service, on peut utiliser des **deployment slots** pour réduire ce risque.
-
-Un slot est une instance parallèle de l’application.
-
-Exemple :
-
-```text
-app-croissant-prod
-  ├── production
-  └── staging
-```
-
-Le slot `production` reçoit le trafic réel.
-Le slot `staging` reçoit la nouvelle version avant bascule.
-
-## Déploiement direct
-
-Déploiement direct :
-
-```text
-pipeline → production
-```
-
-Risque :
-
-```text
-si la nouvelle version est mauvaise, les utilisateurs sont immédiatement impactés
-```
-
-## Déploiement avec slot staging
-
-Déploiement plus sûr :
-
-```text
-pipeline → slot staging
-  ↓
-smoke tests
-  ↓
-swap staging → production
-```
-
-Le slot staging permet de tester la nouvelle version avant de l’exposer aux utilisateurs.
-
-## Blue/Green
-
-Le principe Blue/Green consiste à avoir deux versions disponibles.
-
-```text
-Blue  = version actuellement en production
-Green = nouvelle version préparée à côté
-```
-
-Quand Green est validée, on bascule le trafic.
-
-Avec Azure App Service :
-
-```text
-production = Blue
-staging    = Green
-```
-
-Après swap :
-
-```text
-production = Green
-staging    = Blue
-```
-
-## Déployer sur un slot
-
-Avec `AzureWebApp@1` :
-
-```yaml
-- task: AzureWebApp@1
-  displayName: "Déployer sur le slot staging"
-  inputs:
-    azureSubscription: "$(azureServiceConnection)"
-    appType: "webAppLinux"
-    appName: "$(prodAppName)"
-    deployToSlotOrASE: true
-    resourceGroupName: "$(resourceGroupName)"
-    slotName: "staging"
-    package: "$(Pipeline.Workspace)/croissant-api"
-```
-
-Ici, on ne déploie pas directement sur production. On déploie sur le slot `staging` de l’application de production.
-
-## Smoke test sur le slot
-
-```yaml
-- script: |
-    curl --fail https://$(prodAppName)-staging.azurewebsites.net/health
-  displayName: "Smoke test slot staging"
-```
-
-Si le slot ne répond pas correctement, le pipeline ne doit pas faire le swap.
-
-## Swap vers production
-
-Le swap échange le slot staging et la production.
-
-```yaml
-- task: AzureAppServiceManage@0
-  displayName: "Swap staging vers production"
-  inputs:
-    azureSubscription: "$(azureServiceConnection)"
-    Action: "Swap Slots"
-    WebAppName: "$(prodAppName)"
-    ResourceGroupName: "$(resourceGroupName)"
-    SourceSlot: "staging"
-    SwapWithProduction: true
-```
-
-Après le swap, la nouvelle version reçoit le trafic réel.
-
-## Rollback
-
-Le rollback consiste à revenir à une version précédente.
-
-Avec les slots, le rollback peut être très rapide.
-
-Avant incident :
-
-```text
-production = v2
-staging    = v1
-```
-
-Rollback :
-
-```text
-swap inverse
-```
-
-Après rollback :
-
-```text
-production = v1
-staging    = v2
-```
-
-Le slot staging garde l’ancienne version juste après le swap. C’est ce qui rend le retour arrière rapide.
-
-## Pipeline avec slot et swap
-
-```yaml
-- stage: Deploy_Production
-  displayName: "Déploiement Production"
-  dependsOn: Deploy_Staging
-  jobs:
-    - deployment: DeployProduction
-      environment: "croissant-production"
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - task: DownloadPipelineArtifact@2
-                inputs:
-                  artifact: "croissant-api"
-                  path: "$(Pipeline.Workspace)/croissant-api"
-
-              - task: AzureWebApp@1
-                displayName: "Déployer sur le slot staging"
-                inputs:
-                  azureSubscription: "$(azureServiceConnection)"
-                  appType: "webAppLinux"
-                  appName: "$(prodAppName)"
-                  deployToSlotOrASE: true
-                  resourceGroupName: "$(resourceGroupName)"
-                  slotName: "staging"
-                  package: "$(Pipeline.Workspace)/croissant-api"
-
-              - script: |
-                  curl --fail https://$(prodAppName)-staging.azurewebsites.net/health
-                displayName: "Smoke test slot staging"
-
-              - task: AzureAppServiceManage@0
-                displayName: "Swap staging vers production"
-                inputs:
-                  azureSubscription: "$(azureServiceConnection)"
-                  Action: "Swap Slots"
-                  WebAppName: "$(prodAppName)"
-                  ResourceGroupName: "$(resourceGroupName)"
-                  SourceSlot: "staging"
-                  SwapWithProduction: true
-```
-
-## Ce que les slots apportent
-
-```text
-déploiement sans écraser immédiatement la production
-test sur environnement parallèle
-bascule rapide
-rollback simple
-réduction du stress de mise en production
-```
-
-Les slots ne remplacent pas les tests, mais ils rendent la mise en production plus contrôlée.
-# 12. Pipeline complet
-
-Le pipeline complet de Croissant API assemble les notions précédentes :
-
-```text
-build
-  ↓
-tests
-  ↓
-publication d’artefact
-  ↓
-déploiement dev
-  ↓
-déploiement staging
-  ↓
-déploiement production protégé
-  ↓
-slot swap
-```
-
-## Vue d’ensemble
-
-```text
-push sur main
-  ↓
-stage Build
-  ↓
-artefact croissant-api
-  ↓
-stage Deploy_Dev
-  ↓
-stage Deploy_Staging
-  ↓
-stage Deploy_Production
-```
-
-Le même artefact est utilisé partout.
-
-## YAML complet
-
-```yaml
-trigger:
-  - main
-
-pr:
-  - main
-
-pool:
-  vmImage: ubuntu-latest
-
-variables:
-  azureServiceConnection: "sc-azure-croissant"
-  resourceGroupName: "rg-croissant-demo"
-  devAppName: "app-croissant-dev"
-  stagingAppName: "app-croissant-staging"
-  prodAppName: "app-croissant-prod"
-
-stages:
-  - stage: Build
-    displayName: "Build et tests"
-    jobs:
-      - job: BuildJob
-        displayName: "Construire Croissant API"
-        steps:
-          - checkout: self
-
-          - task: NodeTool@0
-            displayName: "Installer Node.js"
-            inputs:
-              versionSpec: "20.x"
-
-          - script: npm ci
-            displayName: "Installer les dépendances"
-
-          - script: npm test
-            displayName: "Lancer les tests"
-
-          - script: |
-              mkdir -p $(Build.ArtifactStagingDirectory)/app
-              cp package*.json $(Build.ArtifactStagingDirectory)/app/
-              cp -r src $(Build.ArtifactStagingDirectory)/app/src
-            displayName: "Préparer l’artefact"
-
-          - task: PublishPipelineArtifact@1
-            displayName: "Publier l’artefact"
-            inputs:
-              targetPath: "$(Build.ArtifactStagingDirectory)/app"
-              artifact: "croissant-api"
-              publishLocation: "pipeline"
-
-  - stage: Deploy_Dev
-    displayName: "Déploiement Dev"
-    dependsOn: Build
-    jobs:
-      - deployment: DeployDev
-        displayName: "Déployer en Dev"
-        environment: "croissant-dev"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - task: DownloadPipelineArtifact@2
-                  displayName: "Télécharger l’artefact"
-                  inputs:
-                    artifact: "croissant-api"
-                    path: "$(Pipeline.Workspace)/croissant-api"
-
-                - task: AzureWebApp@1
-                  displayName: "Déployer sur App Service Dev"
-                  inputs:
-                    azureSubscription: "$(azureServiceConnection)"
-                    appType: "webAppLinux"
-                    appName: "$(devAppName)"
-                    package: "$(Pipeline.Workspace)/croissant-api"
-
-                - script: |
-                    curl --fail https://$(devAppName).azurewebsites.net/health
-                  displayName: "Smoke test Dev"
-
-  - stage: Deploy_Staging
-    displayName: "Déploiement Staging"
-    dependsOn: Deploy_Dev
-    jobs:
-      - deployment: DeployStaging
-        displayName: "Déployer en Staging"
-        environment: "croissant-staging"
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - task: DownloadPipelineArtifact@2
-                  displayName: "Télécharger l’artefact"
-                  inputs:
-                    artifact: "croissant-api"
-                    path: "$(Pipeline.Workspace)/croissant-api"
-
-                - task: AzureWebApp@1
-                  displayName: "Déployer sur App Service Staging"
-                  inputs:
-                    azureSubscription: "$(azureServiceConnection)"
-                    appType: "webAppLinux"
-                    appName: "$(stagingAppName)"
-                    package: "$(Pipeline.Workspace)/croissant-api"
-
-                - script: |
-                    curl --fail https://$(stagingAppName).azurewebsites.net/health
-                  displayName: "Smoke test Staging"
-
-  - stage: Deploy_Production
-    displayName: "Déploiement Production"
+                    azureSubscription: sc-azure-croissant
+                    appName: $(prodAppName)
+                    deployToSlotOrASE: true
+                    resourceGroupName: $(resourceGroupName)
+                    slotName: $(stagingSlotName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+
+                - script: curl --fail https://$(prodAppName)-$(stagingSlotName).azurewebsites.net/health
+                  displayName: "Smoke test staging"
+
+  - stage: Promote_Production
+    displayName: "Promotion production"
     dependsOn: Deploy_Staging
     jobs:
-      - deployment: DeployProduction
-        displayName: "Déployer en Production"
-        environment: "croissant-production"
+      - deployment: SwapProduction
+        environment: croissant-production
         strategy:
           runOnce:
             deploy:
               steps:
-                - task: DownloadPipelineArtifact@2
-                  displayName: "Télécharger l’artefact"
-                  inputs:
-                    artifact: "croissant-api"
-                    path: "$(Pipeline.Workspace)/croissant-api"
-
-                - task: AzureWebApp@1
-                  displayName: "Déployer sur le slot staging"
-                  inputs:
-                    azureSubscription: "$(azureServiceConnection)"
-                    appType: "webAppLinux"
-                    appName: "$(prodAppName)"
-                    deployToSlotOrASE: true
-                    resourceGroupName: "$(resourceGroupName)"
-                    slotName: "staging"
-                    package: "$(Pipeline.Workspace)/croissant-api"
-
-                - script: |
-                    curl --fail https://$(prodAppName)-staging.azurewebsites.net/health
-                  displayName: "Smoke test slot staging"
-
                 - task: AzureAppServiceManage@0
                   displayName: "Swap staging vers production"
                   inputs:
-                    azureSubscription: "$(azureServiceConnection)"
+                    azureSubscription: sc-azure-croissant
                     Action: "Swap Slots"
-                    WebAppName: "$(prodAppName)"
-                    ResourceGroupName: "$(resourceGroupName)"
-                    SourceSlot: "staging"
+                    WebAppName: $(prodAppName)
+                    ResourceGroupName: $(resourceGroupName)
+                    SourceSlot: $(stagingSlotName)
                     SwapWithProduction: true
 
-                - script: |
-                    curl --fail https://$(prodAppName).azurewebsites.net/health
-                  displayName: "Smoke test Production"
+                - script: curl --fail https://$(prodAppName).azurewebsites.net/health
+                  displayName: "Smoke test production"
 ```
 
 ## Lecture du pipeline
 
-Le stage `Build` produit l’artefact.
+```text
+Test
+   vérifie le code
+
+Build_Image
+   construit l’image et vérifie qu’elle démarre
+
+Push_ACR
+   publie l’image dans Azure Container Registry
+
+Deploy_Dev
+   déploie automatiquement en dev
+
+Deploy_Staging
+   déploie la nouvelle image sur le slot staging
+
+Promote_Production
+   swap staging vers production après protection de l’environnement
+```
+
+## Condition sur main
+
+```yaml
+condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+```
+
+Cette condition évite de pousser une image dans ACR depuis une pull request ou une branche de travail.
 
 ```text
-npm ci
-npm test
-préparation de l’artefact
-publication de l’artefact
+pull request → tests + docker build
+main → tests + docker build + push + déploiement
 ```
 
-Le stage `Deploy_Dev` déploie automatiquement en dev.
+## Protection de la production
 
-Le stage `Deploy_Staging` attend dev.
+La protection n’est pas écrite directement dans ce YAML. Elle se configure sur l’environnement Azure DevOps `croissant-production`.
 
-Le stage `Deploy_Production` attend staging et cible l’environnement `croissant-production`.
-
-La protection production est configurée sur l’environnement Azure DevOps.
-
-Le déploiement production se fait d’abord sur le slot `staging`, puis le pipeline effectue un swap.
-
-## Points à adapter
-
-Les valeurs suivantes doivent correspondre au projet réel :
+Exemples :
 
 ```text
-azureServiceConnection
-resourceGroupName
-devAppName
-stagingAppName
-prodAppName
-noms des environnements Azure DevOps
+approbation manuelle
+branch control main only
+exclusive lock
 ```
 
-Le pipeline est une base. Selon le projet, on peut ajouter :
+Le YAML demande le déploiement. L’environnement contrôle le passage.
+
+## Rollback
+
+Si la production pose problème après le swap :
 
 ```text
-analyse SonarCloud
-scan de dépendances
-publication de couverture de tests
-notifications Teams
-Key Vault
-templates YAML
+production : nouvelle version
+staging    : ancienne version
 ```
-# 13. Bonnes pratiques
 
-Un pipeline CI/CD doit être fiable, lisible et sécurisé.
-
-Le but n’est pas seulement d’automatiser. Le but est d’automatiser proprement.
-
-## Versionner le pipeline
-
-Le fichier YAML doit être dans le repository.
+Rollback rapide :
 
 ```text
-azure-pipelines.yml
+refaire un swap staging → production
 ```
 
-Avantages :
+Ou déployer explicitement un ancien tag :
 
 ```text
-historique Git
-review en pull request
-rollback
-traçabilité
-cohérence avec le code
+croissant-api:127
 ```
 
-## Garder les branches courtes
+Le fait de taguer les images rend ce rollback possible.
 
-Les branches longues compliquent l’intégration.
-
-Préférer :
+## Chaîne finale
 
 ```text
-petites branches
-petites pull requests
-feedback rapide
-merge fréquent
+GitHub = source du code
+Azure Pipelines = automatisation
+Docker = format de livraison
+ACR = stockage des images
+App Service = exécution
+Deployment slots = réduction du risque
+Approvals = contrôle production
+Key Vault = secrets
+Bicep = infrastructure reproductible
 ```
 
-## Protéger main
 
-La branche `main` doit être protégée.
 
-Règles recommandées :
-
-```text
-pas de push direct
-pull request obligatoire
-review obligatoire
-build obligatoire
-work item lié si le projet utilise Boards
-```
-
-## Faire échouer le pipeline en cas de problème
-
-Un pipeline qui masque les erreurs n’est pas fiable.
-
-Les commandes importantes doivent retourner une erreur si elles échouent.
-
-Exemple :
-
-```bash
-curl --fail https://app.example.com/health
-```
-
-Sans `--fail`, certains problèmes HTTP peuvent passer inaperçus.
-
-## Construire une seule fois
-
-Éviter :
-
-```text
-rebuild pour dev
-rebuild pour staging
-rebuild pour prod
-```
-
-Préférer :
-
-```text
-un build
-un artefact
-plusieurs déploiements
-```
-
-## Séparer code et configuration
-
-Le code doit rester le même entre les environnements.
-
-La configuration change :
-
-```text
-nom de base de données
-URL API
-niveau de logs
-secrets
-feature flags
-```
-
-## Ne jamais committer un secret
-
-Interdits :
-
-```text
-mot de passe dans le code
-token dans le YAML
-fichier .env commité
-clé privée dans le repository
-```
-
-À utiliser :
-
-```text
-variables secrètes
-Variable Groups
-Azure Key Vault
-Service Connections limitées
-```
-
-## Limiter les permissions
-
-Une Service Connection ne doit pas avoir plus de droits que nécessaire.
-
-Principe :
-
-```text
-le pipeline dev ne doit pas pouvoir déployer en production
-un pipeline inconnu ne doit pas accéder aux secrets production
-les admins production doivent être peu nombreux
-```
-
-## Utiliser les environnements Azure DevOps
-
-Les environnements apportent :
-
-```text
-historique de déploiement
-approbations
-checks
-contrôle de branche
-verrouillage exclusif
-```
-
-La production doit être un environnement protégé.
-
-## Prévoir le rollback
-
-Un rollback ne doit pas être improvisé pendant un incident.
-
-Il doit être pensé avant.
-
-Avec App Service slots :
-
-```text
-swap vers production
-si problème : swap inverse
-```
-
-## Ajouter du monitoring
-
-Un déploiement réussi techniquement ne suffit pas.
-
-Il faut surveiller :
-
-```text
-taux d’erreur
-latence
-logs applicatifs
-alertes Azure Monitor
-résultat des smoke tests
-```
-
-## Garder le YAML lisible
-
-Un pipeline trop long devient difficile à maintenir.
-
-Bonnes pratiques :
-
-```text
-noms clairs pour les stages
-noms clairs pour les steps
-variables explicites
-templates pour les blocs répétés
-commentaires seulement quand ils aident vraiment
-```
-
-## Améliorations possibles
-
-Une fois la base stable, on peut ajouter :
-
-```text
-quality gate SonarCloud
-scan des dépendances
-scan des secrets
-scan d’images Docker
-notifications Teams
-métriques DORA
-templates partagés
-Infrastructure as Code
-```
-
-Ces améliorations renforcent la chaîne sans changer son principe de base :
-
-```text
-code → CI → artefact → CD → environnements → production contrôlée
-```
+---

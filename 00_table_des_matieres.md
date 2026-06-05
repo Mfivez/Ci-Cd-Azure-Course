@@ -1,0 +1,17 @@
+# Table des matières
+
+- [01 du docker local a la livraison](cours/01_du_docker_local_a_la_livraison.md)
+- [02 github et azure pipelines](cours/02_github_et_azure_pipelines.md)
+- [03 azure pipelines yml pipeline as code](cours/03_azure_pipelines_yml_pipeline_as_code.md)
+- [04 dockerfile et application de demo](cours/04_dockerfile_et_application_de_demo.md)
+- [05 ci docker first](cours/05_ci_docker_first.md)
+- [06 registry et azure container registry](cours/06_registry_et_azure_container_registry.md)
+- [07 azure comme cible de deploiement](cours/07_azure_comme_cible_de_deploiement.md)
+- [08 cd deployer l image](cours/08_cd_deployer_l_image.md)
+- [09 environnements configuration](cours/09_environnements_configuration.md)
+- [10 secrets service connections keyvault](cours/10_secrets_service_connections_keyvault.md)
+- [11 azure artifacts vs acr](cours/11_azure_artifacts_vs_acr.md)
+- [12 approvals checks deployment jobs](cours/12_approvals_checks_deployment_jobs.md)
+- [13 slots blue green rollback](cours/13_slots_blue_green_rollback.md)
+- [14 iac cac pipeline as code](cours/14_iac_cac_pipeline_as_code.md)
+- [15 pipeline complet end to end](cours/15_pipeline_complet_end_to_end.md)

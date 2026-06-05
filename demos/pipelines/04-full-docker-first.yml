@@ -1,0 +1,131 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  imageRepository: croissant-api
+  imageTag: $(Build.BuildId)
+  acrLoginServer: croissantregistrydemo.azurecr.io
+  resourceGroupName: rg-croissant-demo
+  devAppName: croissant-api-dev
+  prodAppName: croissant-api-prod
+  stagingSlotName: staging
+
+stages:
+  - stage: Test
+    displayName: "Tests"
+    jobs:
+      - job: TestNode
+        steps:
+          - checkout: self
+          - script: npm test
+            displayName: "Tests Node.js"
+
+  - stage: Build_Image
+    displayName: "Build image Docker"
+    dependsOn: Test
+    jobs:
+      - job: DockerBuild
+        steps:
+          - checkout: self
+          - script: docker build -t $(imageRepository):$(imageTag) .
+            displayName: "Docker build"
+          - script: |
+              docker run -d --name croissant-api-test -p 8080:8080 $(imageRepository):$(imageTag)
+              sleep 5
+              curl --fail http://localhost:8080/health
+              docker rm -f croissant-api-test
+            displayName: "Smoke test local du conteneur"
+
+  - stage: Push_ACR
+    displayName: "Push vers Azure Container Registry"
+    dependsOn: Build_Image
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: DockerPush
+        steps:
+          - checkout: self
+          - task: Docker@2
+            displayName: "Build and push ACR"
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: Dockerfile
+              containerRegistry: sc-acr-croissant
+              tags: |
+                $(imageTag)
+
+  - stage: Deploy_Dev
+    displayName: "Déploiement dev"
+    dependsOn: Push_ACR
+    jobs:
+      - deployment: DeployDev
+        environment: croissant-dev
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebAppContainer@1
+                  displayName: "Déployer dev"
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    appName: $(devAppName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+
+                - script: curl --fail https://$(devAppName).azurewebsites.net/health
+                  displayName: "Smoke test dev"
+
+  - stage: Deploy_Staging
+    displayName: "Déploiement staging slot"
+    dependsOn: Deploy_Dev
+    jobs:
+      - deployment: DeployStaging
+        environment: croissant-staging
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureWebAppContainer@1
+                  displayName: "Déployer sur slot staging"
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    appName: $(prodAppName)
+                    deployToSlotOrASE: true
+                    resourceGroupName: $(resourceGroupName)
+                    slotName: $(stagingSlotName)
+                    containers: $(acrLoginServer)/$(imageRepository):$(imageTag)
+
+                - script: curl --fail https://$(prodAppName)-$(stagingSlotName).azurewebsites.net/health
+                  displayName: "Smoke test staging"
+
+  - stage: Promote_Production
+    displayName: "Promotion production"
+    dependsOn: Deploy_Staging
+    jobs:
+      - deployment: SwapProduction
+        environment: croissant-production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureAppServiceManage@0
+                  displayName: "Swap staging vers production"
+                  inputs:
+                    azureSubscription: sc-azure-croissant
+                    Action: "Swap Slots"
+                    WebAppName: $(prodAppName)
+                    ResourceGroupName: $(resourceGroupName)
+                    SourceSlot: $(stagingSlotName)
+                    SwapWithProduction: true
+
+                - script: curl --fail https://$(prodAppName).azurewebsites.net/health
+                  displayName: "Smoke test production"
